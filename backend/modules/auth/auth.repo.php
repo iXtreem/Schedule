@@ -3,28 +3,33 @@ require_once __DIR__ . '/../../lib/utf8.php';
 
 function repoAuthUsersCount($conn) {
   $sql = "SELECT COUNT(*) AS cnt FROM TB_AppUser WHERE IsDeleted = 0";
-  $res = odbc_exec($conn, $sql);
-  if (!$res) throw new Exception(odbc_errormsg($conn));
-  $row = odbc_fetch_array($res);
+  $res = $conn->query($sql);
+  if (!$res) throw new Exception($conn->error);
+  $row = $res->fetch_assoc();
   return (int)($row['cnt'] ?? 0);
 }
 
 function repoAuthFindUserByLogin($conn, $login) {
   $sql = "
-    SELECT TOP 1
+    SELECT
       idUser AS id,
       LoginName AS login_name,
       PasswordHash AS password_hash
     FROM TB_AppUser
     WHERE IsDeleted = 0
       AND LoginName = ?
+    LIMIT 1
   ";
 
-  $st = odbc_prepare($conn, $sql);
-  if (!$st) throw new Exception(odbc_errormsg($conn));
-  if (!odbc_execute($st, [$login])) throw new Exception(odbc_errormsg($conn));
+  $st = $conn->prepare($sql);
+  if (!$st) throw new Exception($conn->error);
+  $st->bind_param("s", $login);
+  if (!$st->execute()) throw new Exception($st->error);
 
-  $row = odbc_fetch_array($st);
+  $result = $st->get_result();
+  $row = $result->fetch_assoc();
+  $st->close();
+  
   if (!$row) return null;
   return convertToUtf8($row);
 }
@@ -32,24 +37,17 @@ function repoAuthFindUserByLogin($conn, $login) {
 function repoAuthCreateUser($conn, $login, $passwordHash) {
   $sql = "
     INSERT INTO TB_AppUser (LoginName, PasswordHash, IsDeleted, CreatedAt, UpdatedAt)
-    OUTPUT INSERTED.idUser AS id
-    VALUES (?, ?, 0, GETDATE(), GETDATE())
+    VALUES (?, ?, 0, NOW(), NOW())
   ";
 
-  $st = odbc_prepare($conn, $sql);
-  if (!$st) throw new Exception(odbc_errormsg($conn));
-  if (!odbc_execute($st, [$login, $passwordHash])) throw new Exception(odbc_errormsg($conn));
+  $st = $conn->prepare($sql);
+  if (!$st) throw new Exception($conn->error);
+  $st->bind_param("ss", $login, $passwordHash);
+  if (!$st->execute()) throw new Exception($st->error);
+  
+  $id = $conn->insert_id;
+  $st->close();
 
-  $row = odbc_fetch_array($st);
-  if (is_array($row)) {
-    foreach ($row as $value) {
-      if (is_numeric($value)) {
-        return (int)$value;
-      }
-    }
-  }
-
-  // Fallback: если драйвер не вернул OUTPUT-строку, достаём ID по логину.
-  $created = repoAuthFindUserByLogin($conn, $login);
-  return (int)($created['id'] ?? 0);
+  return (int)$id;
 }
+?>

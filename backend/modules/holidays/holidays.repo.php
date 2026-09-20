@@ -1,35 +1,59 @@
 <?php
+function repoGetHolidays($conn) {
+  $sql = "SELECT idHoliday, HolidayDate FROM TB_Holidays ORDER BY HolidayDate ASC";
+  
+  $result = $conn->query($sql);
+  
+  if (!$result) {
+    throw new Exception("Error fetching holidays: " . $conn->error);
+  }
+  
+  $holidays = [];
+  while ($row = $result->fetch_assoc()) {
+    $holidays[] = $row;
+  }
+  return $holidays;
+}
 
 function repoAddHoliday($conn, $date) {
-  //insert if not exists
-  $sql = "
-    IF NOT EXISTS (SELECT 1 FROM TB_Holidays WHERE HolidayDate = ?)
-    INSERT INTO TB_Holidays (HolidayDate) VALUES (?)
-  ";
-  $st = odbc_prepare($conn, $sql);
-  if (!$st) throw new Exception(odbc_errormsg($conn));
-  if (!odbc_execute($st, [$date, $date])) throw new Exception(odbc_errormsg($conn));
+  $stmt = $conn->prepare("INSERT INTO TB_Holidays (HolidayDate) VALUES (?)");
+  
+  if (!$stmt) {
+    throw new Exception("Prepare failed: " . $conn->error);
+  }
+  
+  $stmt->bind_param("s", $date);
+  
+  if (!$stmt->execute()) {
+    $stmt->close();
+    // Проверяем, не является ли ошибка дубликатом уникального ключа
+    if ($conn->errno == 1062) {
+        throw new Exception("Эта дата уже добавлена в праздники.");
+    }
+    throw new Exception("Execute failed: " . $stmt->error);
+  }
+  
+  $newId = $stmt->insert_id;
+  $stmt->close();
+  
+  return $newId;
 }
 
-function repoRemoveHoliday($conn, $date) {
-  $sql = "DELETE FROM TB_Holidays WHERE HolidayDate = ?";
-  $st = odbc_prepare($conn, $sql);
-  if (!$st) throw new Exception(odbc_errormsg($conn));
-  if (!odbc_execute($st, [$date])) throw new Exception(odbc_errormsg($conn));
+function repoDeleteHoliday($conn, $id) {
+  $stmt = $conn->prepare("DELETE FROM TB_Holidays WHERE idHoliday = ?");
+  
+  if (!$stmt) {
+    throw new Exception("Prepare failed: " . $conn->error);
+  }
+  
+  $stmt->bind_param("i", $id);
+  
+  if (!$stmt->execute()) {
+    $stmt->close();
+    throw new Exception("Execute failed: " . $stmt->error);
+  }
+  
+  $stmt->close();
+  return true;
 }
-
-function repoGetHolidaysRange($conn, $start, $end) {
-  $sql = "
-    SELECT CONVERT(varchar(10), HolidayDate, 23) AS date
-    FROM TB_Holidays
-    WHERE HolidayDate >= ? AND HolidayDate <= ?
-    ORDER BY HolidayDate
-  ";
-  $st = odbc_prepare($conn, $sql);
-  if (!$st) throw new Exception(odbc_errormsg($conn));
-  if (!odbc_execute($st, [$start, $end])) throw new Exception(odbc_errormsg($conn));
-
-  $data = [];
-  while ($row = odbc_fetch_array($st)) $data[] = $row['date'];
-  return $data;
-}
+?>

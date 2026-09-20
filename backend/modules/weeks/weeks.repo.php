@@ -1,36 +1,77 @@
 <?php
-require_once __DIR__ . '/../../lib/utf8.php';
-
-function repoGetWeeks($conn) {
-  $sql = "
-    SELECT
-      idWeek AS id,
-      WeekName AS name,
-      CONVERT(varchar(10), StartDate, 23) AS start_date,
-      CONVERT(varchar(10), EndDate, 23) AS end_date
-    FROM TB_Weeks
-    WHERE IsDeleted = 0
-    ORDER BY StartDate DESC
-  ";
-
-  $res = odbc_exec($conn, $sql);
-  if (!$res) throw new Exception(odbc_errormsg($conn));
-
-  $data = [];
-  while ($row = odbc_fetch_array($res)) {
-    $data[] = convertToUtf8($row);
+function repoGetAllWeeks($conn) {
+  $sql = "SELECT idWeek, Name, DateStart, DateEnd FROM TB_Weeks WHERE IsDeleted = 0 ORDER BY DateStart ASC";
+  $result = $conn->query($sql);
+  
+  if (!$result) {
+    throw new Exception("Error fetching weeks: " . $conn->error);
   }
-  return $data;
+  
+  $weeks = [];
+  while ($row = $result->fetch_assoc()) {
+    $weeks[] = $row;
+  }
+  return $weeks;
 }
 
-function repoAddWeek($conn, $name, $start, $end) {
-  $sql = "INSERT INTO TB_Weeks(WeekName, StartDate, EndDate, IsDeleted) VALUES (?, ?, ?, 0)";
-  $stmt = odbc_prepare($conn, $sql);
-  if (!$stmt) throw new Exception(odbc_errormsg($conn));
-  if (!odbc_execute($stmt, [$name, $start, $end])) throw new Exception(odbc_errormsg($conn));
-
-  // получить последний id (для SQL Server)
-  $res = odbc_exec($conn, "SELECT SCOPE_IDENTITY() AS id");
-  $row = odbc_fetch_array($res);
-  return (int)$row['id'];
+function repoAddWeek($conn, $name, $dateStart, $dateEnd) {
+  // Исправлено: используем prepare() вместо odbc_prepare()
+  $stmt = $conn->prepare("INSERT INTO TB_Weeks (Name, DateStart, DateEnd, IsDeleted) VALUES (?, ?, ?, 0)");
+  
+  if (!$stmt) {
+    throw new Exception("Prepare failed: " . $conn->error);
+  }
+  
+  // Исправлено: используем bind_param() и execute()
+  $stmt->bind_param("sss", $name, $dateStart, $dateEnd);
+  
+  if (!$stmt->execute()) {
+    $stmt->close();
+    throw new Exception("Execute failed: " . $stmt->error);
+  }
+  
+  $newId = $stmt->insert_id;
+  $stmt->close();
+  
+  return $newId;
 }
+
+function repoUpdateWeek($conn, $id, $name, $dateStart, $dateEnd) {
+  $stmt = $conn->prepare("UPDATE TB_Weeks SET Name = ?, DateStart = ?, DateEnd = ? WHERE idWeek = ?");
+  
+  if (!$stmt) {
+    throw new Exception("Prepare failed: " . $conn->error);
+  }
+  
+  $stmt->bind_param("sssi", $name, $dateStart, $dateEnd, $id);
+  
+  if (!$stmt->execute()) {
+    $stmt->close();
+    throw new Exception("Execute failed: " . $stmt->error);
+  }
+  
+  $affected = $stmt->affected_rows;
+  $stmt->close();
+  
+  return $affected > 0;
+}
+
+function repoDeleteWeek($conn, $id) {
+  // Обычно делают мягкое удаление
+  $stmt = $conn->prepare("UPDATE TB_Weeks SET IsDeleted = 1 WHERE idWeek = ?");
+  
+  if (!$stmt) {
+    throw new Exception("Prepare failed: " . $conn->error);
+  }
+  
+  $stmt->bind_param("i", $id);
+  
+  if (!$stmt->execute()) {
+    $stmt->close();
+    throw new Exception("Execute failed: " . $stmt->error);
+  }
+  
+  $stmt->close();
+  return true;
+}
+?>
