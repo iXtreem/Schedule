@@ -1,0 +1,48 @@
+<!doctype html>
+<html lang="ru">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width,initial-scale=1" />
+    <title>Авторизация</title>
+    <link rel="stylesheet" href="style.css" />
+  </head>
+  <body class="login-page">
+    <section class="login-card">
+      <h1 class="title" id="authTitle">Вход в расписание</h1>
+      <p class="subtitle" id="authHint">Введите логин и пароль для продолжения.</p>
+
+      <form id="authForm" autocomplete="off">
+        <div class="field">
+          <label class="label" for="authLogin">Логин</label>
+          <input
+            id="authLogin"
+            class="select"
+            autocomplete="username"
+            placeholder="Например: admin"
+          />
+        </div>
+
+        <div class="field">
+          <label class="label" for="authPassword">Пароль</label>
+          <input
+            id="authPassword"
+            class="select"
+            type="password"
+            autocomplete="current-password"
+            placeholder="Введите пароль"
+          />
+        </div>
+
+        <div class="login-actions">
+          <button id="authSubmit" class="btn btn-primary" type="submit">
+            Войти
+          </button>
+        </div>
+      </form>
+
+      <div id="authError" class="hint hidden"></div>
+    </section>
+
+    <script type="module" src="./login.js"></script>
+  </body>
+</html>

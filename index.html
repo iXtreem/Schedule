@@ -1,0 +1,474 @@
+<!doctype html>
+<html lang="ru">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width,initial-scale=1" />
+    <title>Расписание</title>
+    <link rel="stylesheet" href="week-ui.css" />
+    <link rel="stylesheet" href="style.css" />
+  </head>
+  <body>
+    <header class="header">
+      <div class="header-top">
+        <div>
+          <h1 class="title">Расписание</h1>
+          <p class="subtitle">Учебный проект</p>
+        </div>
+        <div class="header-auth">
+          <span id="authUserLabel" class="muted"></span>
+          <button id="logoutBtn" class="btn btn-secondary" type="button">
+            Выйти
+          </button>
+        </div>
+      </div>
+    </header>
+
+    <main class="container">
+      <!-- Панель управления -->
+      <section class="panel">
+        <div class="view-tabs" role="tablist" aria-label="Режим расписания">
+          <button
+            id="groupsTabBtn"
+            class="view-tab is-active"
+            type="button"
+            role="tab"
+            aria-selected="true"
+          >
+            По группам
+          </button>
+          <button
+            id="teachersTabBtn"
+            class="view-tab"
+            type="button"
+            role="tab"
+            aria-selected="false"
+          >
+            По преподавателям
+          </button>
+        </div>
+        <div class="panel-row">
+          <div class="field">
+            <div class="week-row">
+              <label class="label">Выбор недели</label>
+              <div class="week-controls">
+                <select id="weekSelect" class="select"></select>
+                <button id="addWeekBtn" class="btn btn-outline">＋</button>
+              </div>
+            </div>
+
+            <div class="week-row">
+              <label class="label">Текущая неделя</label>
+              <div id="weekDates" class="muted"></div>
+            </div>
+          </div>
+
+          <div class="group-triplets groups-only" style="margin-top: 10px">
+            <select id="tripletPresetSelect" style="margin-left: 12px"></select>
+            <button id="saveTripletPresetBtn" type="button">
+              Сохранить набор (3)
+            </button>
+            <button id="deleteTripletPresetBtn" type="button">
+              Удалить набор
+            </button>
+          </div>
+
+          <div class="group-tools groups-only">
+            <button id="selectAllGroupsBtn" type="button">Выбрать все</button>
+            <button id="clearAllGroupsBtn" type="button">Снять все</button>
+
+            <label style="margin-left: 12px">
+              <input type="checkbox" id="onlyActiveGroups" checked />
+              Только актуальные (последние 4 года)
+            </label>
+          </div>
+
+          <div class="field field-wide groups-only">
+            <label class="label" for="groupSearch">Поиск группы</label>
+            <input
+              id="groupSearch"
+              class="select"
+              placeholder="Например: ИС-21"
+            />
+            <div id="groupBox" class="groups"></div>
+          </div>
+
+          <div class="field groups-only">
+            <button id="applyGroups" class="btn btn-primary">Применить</button>
+            <button id="roomPrefsBtn" class="btn" type="button">
+              Закрепление кабинета
+            </button>
+          </div>
+
+          <div class="field export-buttons-row">
+            <button id="downloadRoomGridBtn" class="btn" type="button">
+              Скачать сетку кабинетов
+            </button>
+            <button id="openExportBuilderBtn" class="btn" type="button">
+              Конструктор экспорта
+            </button>
+            <button id="downloadTeacherGridBtn" class="btn" type="button">
+              Скачать сетку преподавателей
+            </button>
+          </div>
+        </div>
+
+        <div class="field teachers-only hidden teacher-tools">
+          <label class="label" for="teacherViewSearch"
+            >Поиск преподавателя</label
+          >
+          <input
+            id="teacherViewSearch"
+            class="select"
+            placeholder="Например: Иванов И.И."
+            autocomplete="off"
+          />
+          <div class="muted">
+            Показываются преподаватели по выбранной неделе
+          </div>
+        </div>
+
+        <div class="hint groups-only">
+          Кликни по ячейке занятия — откроется окно редактирования.
+        </div>
+      </section>
+
+      <!-- Таблица расписания -->
+      <section class="table-wrap">
+        <table id="scheduleTable" class="table"></table>
+      </section>
+    </main>
+
+    <!-- Модалка (окно) -->
+    <div id="exportBuilderOverlay" class="modal-overlay hidden">
+      <div class="modal export-builder-modal">
+        <div class="modal-header">
+          <div>
+            <h2 class="modal-title">Конструктор экспорта</h2>
+            <div class="modal-subtitle">
+              Соберите наборы групп под макеты x1/x2/x3 и скачайте один Excel
+            </div>
+          </div>
+          <button
+            id="exportBuilderClose"
+            class="icon-btn"
+            aria-label="Закрыть конструктор"
+          >
+            ✕
+          </button>
+        </div>
+
+        <div class="modal-body">
+          <div class="group-export-builder">
+            <label class="label" for="exportTemplateSelect"
+              >Выберите макет и добавьте отмеченные группы в набор</label
+            >
+            <div class="group-export-builder-row">
+              <select id="exportTemplateSelect" class="select">
+                <option value="1">maket_raspisaniax1 (1 группа)</option>
+                <option value="2">maket_raspisaniax2 (2 группы)</option>
+                <option value="3" selected>
+                  maket_raspisaniax3 (3 группы)
+                </option>
+              </select>
+              <button id="addExportBundleBtn" class="btn" type="button">
+                Добавить выбранные в набор
+              </button>
+              <button id="clearExportBundlesBtn" class="btn" type="button">
+                Очистить набор
+              </button>
+            </div>
+            <div id="exportBundlesList" class="export-bundles-list muted">
+              Наборы для экспорта не добавлены.
+            </div>
+          </div>
+        </div>
+
+        <div class="modal-footer">
+          <button
+            id="exportBuilderCancel"
+            class="btn btn-secondary"
+            type="button"
+          >
+            Закрыть
+          </button>
+          <button
+            id="downloadAllRecentScheduleBtn"
+            class="btn"
+            type="button"
+            onclick="
+              (function () {
+                var w = document.getElementById('weekSelect');
+                var weekId = Number((w && w.value) || 0);
+                if (!weekId) {
+                  alert('Сначала выбери неделю.');
+                  return;
+                }
+                window.location.href =
+                  './ScheduleEXCEL1/export.php?week_id=' +
+                  encodeURIComponent(String(weekId)) +
+                  '&export_mode=all_recent&recent_years=4&v=' +
+                  Date.now();
+              })()
+            "
+          >
+            Скачать все группы (4 года)
+          </button>
+          <button
+            id="downloadScheduleGridBtn"
+            class="btn btn-primary"
+            type="button"
+          >
+            Скачать Excel
+          </button>
+        </div>
+      </div>
+    </div>
+
+    <div id="modalOverlay" class="modal-overlay hidden">
+      <div class="modal">
+        <div class="modal-header">
+          <div>
+            <h2 id="modalTitle" class="modal-title">Занятие</h2>
+            <div id="modalSubtitle" class="modal-subtitle"></div>
+          </div>
+          <button id="modalClose" class="icon-btn" aria-label="Закрыть">
+            ✕
+          </button>
+        </div>
+
+        <div class="modal-body">
+          <div class="form-grid">
+            <div class="field">
+              <label class="label" for="termInput">Семестр (авто)</label>
+              <input
+                id="termInput"
+                class="select"
+                type="number"
+                min="1"
+                max="12"
+                disabled
+                title="Рассчитывается автоматически"
+              />
+            </div>
+
+            <div class="field">
+              <label class="label" for="hoursSelect">Часы</label>
+              <select id="hoursSelect" class="select">
+                <option value="2">2 часа</option>
+                <option value="1">1 час</option>
+              </select>
+            </div>
+
+            <div class="field">
+              <label class="label" for="subjectSearch">Поиск дисциплины</label>
+              <input
+                id="subjectSearch"
+                class="select"
+                placeholder="Например: математика"
+                autocomplete="off"
+              />
+              <label class="label" for="subjectSelect">Дисциплина</label>
+              <select id="subjectSelect" class="select"></select>
+            </div>
+
+            <div class="field">
+              <label class="label" for="teacherSearch"
+                >Поиск преподавателя</label
+              >
+              <input
+                id="teacherSearch"
+                class="select"
+                placeholder="Например: Иванов"
+                autocomplete="off"
+              />
+              <label class="label" for="teacherSelect">Преподаватель</label>
+              <select id="teacherSelect" class="select"></select>
+            </div>
+
+            <div class="field">
+              <label class="label" for="typeSearch">Поиск типа занятия</label>
+              <input
+                id="typeSearch"
+                class="select"
+                placeholder="Например: лекция"
+                autocomplete="off"
+              />
+              <label class="label" for="typeSelect">Тип занятия</label>
+              <select id="typeSelect" class="select"></select>
+            </div>
+
+            <div class="field">
+              <label class="label" for="roomSearch">Поиск аудитории</label>
+              <input
+                id="roomSearch"
+                class="select"
+                placeholder="Например: А-101"
+                autocomplete="off"
+              />
+              <label class="label" for="roomSelect">Аудитория</label>
+              <select id="roomSelect" class="select"></select>
+            </div>
+
+            <div class="field field-full">
+              <label class="label" for="customTextInput"
+                >Произвольный текст в ячейке</label
+              >
+              <textarea
+                id="customTextInput"
+                class="textarea-input"
+                rows="3"
+                placeholder="Например: день самоподготовки или производственная практика"
+              ></textarea>
+            </div>
+          </div>
+
+          <div class="hint">Загрузка из БД</div>
+        </div>
+
+        <div class="modal-footer">
+          <button id="deleteLessonBtn" class="btn btn-danger">Удалить</button>
+          <button id="resetModalBtn" class="btn btn-secondary" type="button">
+            Сбросить
+          </button>
+          <button id="saveLessonBtn" class="btn btn-primary">Сохранить</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- Модалка недели -->
+    <div id="weekModalOverlay" class="modal-overlay hidden">
+      <div class="modal">
+        <div class="modal-header">
+          <h2 class="modal-title">Добавление новой недели</h2>
+          <button id="weekModalClose" class="icon-btn" aria-label="Закрыть">
+            ✕
+          </button>
+        </div>
+
+        <div class="modal-body">
+          <div class="field">
+            <label class="label" for="weekName">Название недели *</label>
+            <input
+              id="weekName"
+              class="select"
+              placeholder="01-12-2025 по 07-12-2025"
+              autocomplete="off"
+            />
+            <div class="muted">Формат: "01-12-2025 по 07-12-2025"</div>
+          </div>
+
+          <div class="form-grid">
+            <div class="field">
+              <label class="label" for="startDate">Дата начала *</label>
+              <input id="startDate" type="date" class="select" />
+            </div>
+
+            <div class="field">
+              <label class="label" for="endDate">Дата окончания *</label>
+              <input id="endDate" type="date" class="select" />
+            </div>
+          </div>
+
+          <div class="hint">
+            После создания недели ты сможешь добавлять занятия для этой недели.
+          </div>
+        </div>
+
+        <div class="modal-footer">
+          <button id="weekCancelBtn" class="btn">Отмена</button>
+          <button id="saveWeekBtn" class="btn btn-primary">
+            Сохранить неделю
+          </button>
+        </div>
+      </div>
+    </div>
+
+    <div id="roomPrefsModalOverlay" class="modal-overlay hidden">
+      <div class="modal room-prefs-modal">
+        <div class="modal-header">
+          <div>
+            <h2 class="modal-title">Настройки аудиторий по дисциплинам</h2>
+            <div class="modal-subtitle">
+              Задай приоритеты аудиторий для каждой дисциплины
+            </div>
+          </div>
+          <button
+            id="roomPrefsModalClose"
+            class="icon-btn"
+            aria-label="Закрыть"
+            type="button"
+          >
+            ✕
+          </button>
+        </div>
+
+        <div class="modal-body">
+          <div class="room-pref-layout">
+            <section class="room-pref-editor">
+              <label class="label" for="roomPrefSubjectSearch"
+                >Поиск дисциплины</label
+              >
+              <input
+                id="roomPrefSubjectSearch"
+                class="select"
+                placeholder="Например: математика"
+                autocomplete="off"
+              />
+
+              <!-- <label class="label" for="roomPrefSubjectSelect"
+                >Дисциплина</label
+              > -->
+              <select id="roomPrefSubjectSelect" class="select"></select>
+
+              <label class="label" for="roomPrefRoomSearch"
+                >Поиск аудитории</label
+              >
+              <input
+                id="roomPrefRoomSearch"
+                class="select"
+                placeholder="Например: А-201"
+                autocomplete="off"
+              />
+
+              <div id="roomPrefRows" class="room-pref-rows"></div>
+              <div class="room-pref-toolbar">
+                <button
+                  id="addRoomPrefRowBtn"
+                  type="button"
+                  class="btn btn-outline room-pref-add-btn"
+                >
+                  Добавить аудиторию
+                </button>
+              </div>
+            </section>
+
+            <section class="room-pref-overview-panel">
+              <label class="label" for="roomPrefOverviewSearch"
+                >Поиск в обзоре</label
+              >
+              <input
+                id="roomPrefOverviewSearch"
+                class="select"
+                placeholder="Дисциплина или аудитория"
+                autocomplete="off"
+              />
+              <div id="roomPrefOverview" class="room-pref-overview"></div>
+            </section>
+          </div>
+        </div>
+
+        <div class="modal-footer">
+          <button id="roomPrefsCancelBtn" class="btn" type="button">
+            Отмена
+          </button>
+          <button id="roomPrefsSaveBtn" class="btn btn-primary" type="button">
+            Сохранить
+          </button>
+        </div>
+      </div>
+    </div>
+
+    <script type="module" src="app.js"></script>
+  </body>
+  <button class="btn">Отправить</button>
+</html>
