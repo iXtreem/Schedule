@@ -894,3 +894,107 @@ body {
     font-size: 24px;
   }
 }
+
+/* ===== Модалка «Справочники» ===== */
+.dict-modal {
+  max-width: 860px;
+  width: min(92vw, 860px);
+}
+
+.dict-tabs {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-bottom: 12px;
+}
+
+.dict-tab {
+  border: 1px solid #d7dbе3;
+  border: 1px solid #d7dbe3;
+  background: #f4f6fa;
+  color: #333;
+  border-radius: 8px;
+  padding: 6px 12px;
+  font-size: 14px;
+  cursor: pointer;
+}
+
+.dict-tab:hover {
+  background: #e8ecf4;
+}
+
+.dict-tab.active {
+  background: #2f6fed;
+  border-color: #2f6fed;
+  color: #fff;
+}
+
+.dict-form {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+  gap: 10px;
+  margin-bottom: 10px;
+}
+
+.dict-field {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  font-size: 13px;
+  color: #555;
+}
+
+.dict-input {
+  width: 100%;
+  box-sizing: border-box;
+}
+
+.dict-toolbar {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 8px;
+}
+
+.dict-toolbar .select {
+  flex: 0 0 240px;
+}
+
+.dict-edit-hint {
+  font-size: 13px;
+}
+
+.dict-table-wrap {
+  max-height: 320px;
+  overflow: auto;
+  border: 1px solid #e3e6ee;
+  border-radius: 8px;
+}
+
+.dict-table th {
+  position: sticky;
+  top: 0;
+  background: #f4f6fa;
+  z-index: 1;
+}
+
+.dict-table tbody tr {
+  cursor: pointer;
+}
+
+.dict-table tbody tr:hover {
+  background: #eef3ff;
+}
+
+.dict-table tbody tr.dict-row-active {
+  background: #dcebff;
+}
+
+.dict-actions {
+  white-space: nowrap;
+  text-align: right;
+}
+
+.dict-table-bell thead th {
+  text-align: left;
+}

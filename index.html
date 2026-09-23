@@ -9,6 +9,51 @@
   </head>
   <body>
     <header class="header">
+         <!-- Модалка: справочники (группы, преподаватели, предметы, аудитории, недели, время пар) -->
+    <div id="dictModalOverlay" class="modal-overlay hidden">
+      <div class="modal dict-modal">
+        <div class="modal-header">
+          <div>
+            <h2 class="modal-title">Справочники</h2>
+            <div class="modal-subtitle">
+              Добавляй, изменяй и удаляй записи без доступа к базе
+            </div>
+          </div>
+          <button id="dictModalClose" class="icon-btn" aria-label="Закрыть" type="button">
+            ✕
+          </button>
+        </div>
+
+        <div class="modal-body">
+          <div class="dict-tabs" id="dictTabs"></div>
+
+          <div id="dictFormWrap" class="dict-form"></div>
+
+          <div class="dict-toolbar">
+            <input
+              id="dictSearch"
+              class="select"
+              placeholder="Поиск по списку"
+              autocomplete="off"
+            />
+            <span id="dictEditHint" class="muted dict-edit-hint hidden"></span>
+            <button id="dictCancelEditBtn" class="btn btn-outline hidden" type="button">
+              Отменить
+            </button>
+          </div>
+
+          <div class="dict-table-wrap">
+            <table id="dictTable" class="table dict-table"></table>
+          </div>
+        </div>
+
+        <div class="modal-footer">
+          <button id="dictSaveBtn" class="btn btn-primary" type="button">
+            Сохранить
+          </button>
+        </div>
+      </div>
+    </div>
       <div class="header-top">
         <div>
           <h1 class="title">Расписание</h1>
@@ -96,6 +141,9 @@
             <button id="applyGroups" class="btn btn-primary">Применить</button>
             <button id="roomPrefsBtn" class="btn" type="button">
               Закрепление кабинета
+            </button>
+            <button id="dictBtn" class="btn" type="button">
+              Справочники
             </button>
           </div>
 
@@ -471,4 +519,5 @@
     <script type="module" src="app.js"></script>
   </body>
   <button class="btn">Отправить</button>
+  
 </html>

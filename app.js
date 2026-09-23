@@ -13,6 +13,7 @@ import {
   deleteLesson,
 } from "./js/modules/modals/openModal.js";
 import { initRoomPrefsModal } from "./js/modules/modals/roomPrefsModal.js";
+import { initDictModal } from "./js/modules/modals/dictModal.js";
 import { filterByName } from "./js/modules/modals/searchModal.js";
 
 import {
@@ -260,6 +261,44 @@ async function init() {
   }));
 
   initRoomPrefsModal();
+  initDictModal();
+
+  window.addEventListener("dict-changed", async (e) => {
+    const kind = e.detail?.kind;
+    try {
+      if (kind === "groups") {
+        state.groups = normalizeGroups(await api.groups());
+        applyGroupsFilters();
+        renderGroups();
+        setGroupCheckboxesFromState();
+      } else if (kind === "weeks") {
+        state.weeks = normalizeWeeks(await api.weeks());
+        renderWeekSelect();
+        const stillThere = state.weeks.some(
+          (w) => Number(w.id) === Number(state.currentWeekId)
+        );
+        const nextWeek = stillThere ? state.currentWeekId : state.weeks[0]?.id;
+        if (nextWeek) {
+          await changeWeek(nextWeek);
+          if (weekSelect) weekSelect.value = String(nextWeek);
+        }
+      } else if (kind === "teachers" || kind === "subjects" || kind === "rooms" || kind === "lesson_types") {
+        const [subjects, teachers, rooms, lessonTypes] = await Promise.all([
+          api.subjects(),
+          api.teachers(),
+          api.rooms(),
+          api.lessonTypes(),
+        ]);
+        state.subjects = (subjects || []).map((x) => ({ ...x, id: Number(x.id) }));
+        state.teachers = (teachers || []).map((x) => ({ ...x, id: Number(x.id) }));
+        state.rooms = (rooms || []).map((x) => ({ ...x, id: Number(x.id) }));
+        state.lessonTypes = (lessonTypes || []).map((x) => ({ ...x, id: Number(x.id) }));
+      }
+      renderActiveTable();
+    } catch (err) {
+      console.error("Не удалось обновить данные после изменения справочника:", err);
+    }
+  });
 
   state.selectedGroupIds = state.groups.map((g) => Number(g.id));
 
@@ -596,7 +635,7 @@ function bindEvents() {
         return;
       }
 
-      
+
       const res = await api.createWeek({
         name: weekName,
         start_date: startDate,
@@ -608,13 +647,13 @@ function bindEvents() {
         return;
       }
 
-      
+
       state.weeks = normalizeWeeks(await api.weeks());
       renderWeekSelect();
 
       weekModalOverlay.classList.add("hidden");
 
-      
+
       weekSelect.value = String(res.id);
       await changeWeek(res.id);
     } catch (e) {
