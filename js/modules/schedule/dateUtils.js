@@ -1,5 +1,4 @@
 
-
 import { state } from "../../../app.js";
 import { getBellSchedules } from "../modals/bellStore.js";
 import { normalizeBellText } from "./bellUtils.js"; // ← новая зависимость
@@ -44,7 +43,12 @@ export function formatDateForDisplay(date) {
 export function isFullOffDay(dateOrStr) {
   const dateStr =
     typeof dateOrStr === "string" ? dateOrStr : formatDateForInput(dateOrStr);
-  return state.dayMarks[dateStr] === "off";
+  // ВАЖНО: в state нет поля dayMarks (его никогда не инициализировали),
+  // поэтому state.dayMarks[dateStr] падало с TypeError
+  // «Cannot read properties of undefined (reading '2026-12-28')».
+  // Нормализуем значение к объекту — при отсутствии данных день считается рабочим.
+  const dayMarks = state.dayMarks || {};
+  return dayMarks[dateStr] === "off";
 }
 export function getDayType(date) {
   const dateStr = formatDateForInput(date);

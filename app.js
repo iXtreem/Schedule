@@ -1,5 +1,4 @@
 
-
 import renderWeekSelect from "./js/modules/weeks/renderWeekSelect.js";
 import {
   renderGroups,
@@ -33,6 +32,9 @@ export const state = {
   currentWeekId: null,
   weekStart: null,
   holidays: [],
+  // Отметки дней (например, «off» — полный выходной). Заполняется при
+  // необходимости; по умолчанию пустой объект, чтобы isFullOffDay() не падал.
+  dayMarks: {},
 
   groups: [],
   subjects: [],
