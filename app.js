@@ -15,6 +15,7 @@ import {
 } from "./js/modules/modals/openModal.js";
 import { initRoomPrefsModal } from "./js/modules/modals/roomPrefsModal.js";
 import { initDictModal } from "./js/modules/modals/dictModal.js";
+import { ensureBellLoaded, setBellSchedules } from "./js/modules/modals/bellStore.js";
 import { filterByName } from "./js/modules/modals/searchModal.js";
 
 import {
@@ -253,6 +254,10 @@ async function init() {
 
   state.weeks = normalizeWeeks(await api.weeks());
 
+  // Время пар (расписание звонков) загружаем из БД — таблица расписания
+  // должна показывать сохранённые настройки, а не значения по умолчанию.
+  await ensureBellLoaded();
+
   const [subjects, teachers, rooms, lessonTypes] = await Promise.all([
     api.subjects(),
     api.teachers(),
@@ -298,6 +303,10 @@ async function init() {
         state.teachers = (teachers || []).map((x) => ({ ...x, id: Number(x.id) }));
         state.rooms = (rooms || []).map((x) => ({ ...x, id: Number(x.id) }));
         state.lessonTypes = (lessonTypes || []).map((x) => ({ ...x, id: Number(x.id) }));
+      } else if (kind === "bell") {
+        // «Время пар» сохранено — синхронизируем общее хранилище со сервером,
+        // чтобы колонка времени в таблице расписания сразу обновилась.
+        setBellSchedules(await ensureBellLoaded(true));
       }
       renderActiveTable();
     } catch (err) {

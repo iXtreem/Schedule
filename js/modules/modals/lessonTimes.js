@@ -14,6 +14,7 @@
 //      начало следующей = конец предыдущей + перемена.
 
 import { api } from "../../LoadFromBD/api.js";
+import { setBellSchedules } from "./bellStore.js";
 
 // ---------- Настройки по умолчанию ----------
 const DEFAULT_START_MIN = 9 * 60; // 9:00 — начало первой пары по умолчанию
@@ -26,7 +27,6 @@ const MAX_MIN = 23 * 60 + 59; // верхняя граница времени в
 // Типы дней, для которых настраивается время звонков (как в старом bell_schedule)
 const DAY_TYPES = [
   { key: "workday", title: "Рабочие дни" },
-  { key: "sunday", title: "Воскресенье" },
   { key: "holiday", title: "Праздничные / сокращённые" },
 ];
 
@@ -61,15 +61,24 @@ function parseSlotStr(str) {
 }
 
 // ---------- Нормализация: главный страж логической целостности ----------
-// Проходит по парам сверху вниз и при необходимости сдвигает начало
-// каждой пары на «окончание предыдущей + перемена». Так невозможно
-// получить уменьшение времени от пары к паре.
+// Проходит по парам сверху вниз и ПРИНУДИТЕЛЬНО выстраивает цепочку:
+//   начало каждой следующей пары = конец предыдущей + перемена.
+// Поэтому невозможно ввести, например, 1-ю пару 8:00–8:45 с переменой 15,
+// а 2-ю пару 19:00 — вторая начнётся ровно в 9:00.
+// Начало пары можно изменить только у ПЕРВОЙ пары (и то через поле «Начало»):
+// поля «Начало» у остальных пар заблокированы и пересчитываются автоматически.
 function normalize(state) {
   let prevEnd = null; // окончание предыдущей пары (в минутах)
   state.lessons.forEach((les, i) => {
-    const minStart = prevEnd === null ? 0 : prevEnd + (state.breaks[i - 1] ?? DEFAULT_BREAK);
-    if (les.startMin < minStart) les.startMin = minStart;
     les.durationMin = clamp(les.durationMin, 15, 240); // пара не может быть абсурдно короткой/длинной
+    if (i === 0) {
+      // первая пара: начало задаётся вручную, но не позже конца суток
+      les.startMin = clamp(les.startMin, 0, MAX_MIN - les.durationMin);
+    } else {
+      // все последующие пары — строго после предыдущей с учётом перемены
+      const minStart = prevEnd + (state.breaks[i - 1] ?? DEFAULT_BREAK);
+      les.startMin = Math.min(minStart, MAX_MIN);
+    }
     prevEnd = Math.min(les.startMin + les.durationMin, MAX_MIN);
     les.endMin = prevEnd;
   });
@@ -127,8 +136,8 @@ let dirty = false; // были ли изменения с момента пос�
 function renderAll() {
   if (!rootEl) return;
   rootEl.innerHTML = DAY_TYPES.map((dt) => renderDayType(dt)).join("") +
-    `<div class="lt-hint muted">Начало каждой следующей пары не может быть раньше конца
-     предыдущей с учётом перемены — при недопустимом значении соседние пары сдвигаются автоматически.</div>`;
+    `<div class="lt-hint muted">Начало задаётся только у первой пары. Все остальные пары
+     выстраиваются автоматически: начало следующей = конец предыдущей + перемена.</div>`;
 }
 
 function renderDayType(dt) {
@@ -136,11 +145,13 @@ function renderDayType(dt) {
   const rows = st.lessons
     .map((les, i) => {
       const isLast = i === st.lessons.length - 1;
+      const isFirst = i === 0;
       const brk = st.breaks[i] ?? DEFAULT_BREAK;
       return `
       <tr data-lt-row="${dt.key}:${i}">
         <td class="lt-num">${i + 1} пара</td>
-        <td><input class="select dict-input lt-time" type="time" data-lt="start" value="${fmtHM(les.startMin)}" /></td>
+        <td><input class="select dict-input lt-time" type="time" data-lt="start" value="${fmtHM(les.startMin)}"
+             ${isFirst ? "" : 'disabled title="Начало следующей пары считается автоматически: конец предыдущей + перемена"'} /></td>
         <td><input class="select dict-input lt-num-inp" type="number" min="15" max="240" step="5"
                    data-lt="duration" value="${les.durationMin}" /> мин</td>
         <td class="lt-end">${fmtHM(les.endMin ?? les.startMin + les.durationMin)}</td>
@@ -181,9 +192,12 @@ function syncStateFromDom(typeKey) {
     const i = Number(tr.dataset.ltRow.split(":")[1]);
     const les = st.lessons[i];
     if (!les) return;
-    const startVal = parseHM(tr.querySelector('[data-lt="start"]')?.value);
+    // Начало читаем только у первой пары (у остальных поле disabled и считается автоматически)
+    if (i === 0) {
+      const startVal = parseHM(tr.querySelector('[data-lt="start"]')?.value);
+      if (startVal !== null) les.startMin = clamp(startVal, 0, MAX_MIN);
+    }
     const durVal = Number(tr.querySelector('[data-lt="duration"]')?.value);
-    if (startVal !== null) les.startMin = clamp(startVal, 0, MAX_MIN);
     if (Number.isFinite(durVal)) les.durationMin = clamp(durVal, 15, 240);
     const brkVal = Number(tr.querySelector('[data-lt="break"]')?.value);
     if (Number.isFinite(brkVal) && st.breaks[i] !== undefined) st.breaks[i] = clamp(brkVal, MIN_GAP, 120);
@@ -198,6 +212,8 @@ function onInput(e) {
   const st = states[typeKey];
 
   if (e.target.matches('[data-lt="start"]')) {
+    // Начало можно менять только у первой пары — остальные считаются автоматически
+    if (idx !== 0) return;
     const v = parseHM(e.target.value);
     if (v === null) return;
     st.lessons[idx].startMin = clamp(v, 0, MAX_MIN);
@@ -298,6 +314,9 @@ export async function saveLessonTimes() {
   try {
     const res = await api.saveBellSchedule(payload);
     loadedBell = res?.data || payload;
+    // Обновляем общее хранилище, чтобы основная таблица расписания
+    // сразу показала новые времена пар.
+    setBellSchedules(loadedBell);
     dirty = false;
     return true;
   } catch (e) {

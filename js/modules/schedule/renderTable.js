@@ -1,4 +1,5 @@
 
+
 import { state, scheduleTable } from "../../../app.js";
 import {
     formatDateForDisplay,
@@ -90,8 +91,8 @@ export function renderTable() {
         date.setDate(date.getDate() + dayIndex);
 
         const dayType = getDayType(date);
-        const maxPairs = getMaxPairs(dayType);
         const timeSlots = getTimeSlots(dayType);
+        const maxPairs = getMaxPairs(dayType, timeSlots);
 
         // Тумблер рабочего/выходного дня из таблицы убран:
         // выходные дни теперь отмечаются в окне «Справочники» → вкладка «Выходные дни».
@@ -108,13 +109,12 @@ export function renderTable() {
                 <td class="day-cell" rowspan="${maxPairs}">
                     <div><b>${DAY_NAMES[dayIndex]}</b></div>
                     <div class="muted">${formatDateForDisplay(date)}</div>
-                    <div class="muted">Тип: ${dayType}</div>
                 </td>
                 `;
             }
 
             html += `<td>${timeSlot}</td>`;
-            html += `<td class="time-cell">${timeSlots[timeSlot] || "-"}</td>`;
+            html += `<td class="time-cell">${timeSlots[timeSlot] || timeSlots[String(timeSlot)] || "-"}</td>`;
 
             for (const g of visibleGroups) {
                 const lesson = findLesson(
