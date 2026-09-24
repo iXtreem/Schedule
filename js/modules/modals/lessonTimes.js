@@ -147,9 +147,6 @@ function renderDayType(dt) {
         <td>${isLast ? '<span class="muted">—</span>' : `
           <input class="select dict-input lt-num-inp" type="number" min="${MIN_GAP}" max="120" step="5"
                  data-lt="break" value="${brk}" /> мин перерыв`}</td>
-        <td class="dict-actions">
-          <button type="button" class="icon-btn" data-lt-remove="${dt.key}:${i}" title="Удалить пару">➖</button>
-        </td>
       </tr>`;
     })
     .join("");
@@ -165,14 +162,6 @@ function renderDayType(dt) {
         </tr>
       </thead>
       <tbody>${rows}</tbody>
-      <tfoot>
-        <tr>
-          <td colspan="6">
-            <button type="button" class="btn lt-add" data-lt-add="${dt.key}"
-              ${st.lessons.length >= MAX_LESSONS ? "disabled" : ""}>➕ Добавить пару</button>
-          </td>
-        </tr>
-      </tfoot>
     </table>`;
 }
 

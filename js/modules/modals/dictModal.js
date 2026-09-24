@@ -17,11 +17,16 @@ const editHint = document.getElementById("dictEditHint");
 const cancelEditBtn = document.getElementById("dictCancelEditBtn");
 const tableEl = document.getElementById("dictTable");
 const saveBtn = document.getElementById("dictSaveBtn");
+// Элементы для перемещения и изменения размера окна
+const boxEl = document.getElementById("dictModalBox");
+const headerEl = document.getElementById("dictModalHeader");
+const resizeEl = document.getElementById("dictModalResize");
 
 let isBound = false;
 let activeTab = "groups";
 let editingId = null; // id редактируемой записи (null = создание новой)
 let rowsCache = []; // текущий список записей активной вкладки
+let bellData = null; // справочник времени пар { workday: {1: "...", ...}, ... }
 
 // ---- Описание вкладок и полей форм (ключи JSON совпадают с backend/lib/crud.php) ----
 const TABS = [
@@ -111,8 +116,14 @@ const TABS = [
 
 // Вкладка «Выходные дни» — календарь, отрисовываемый модулем daysOffCalendar.js
 const DAYSOFF_TAB = { key: "daysoff", title: "Выходные дни" };
-// Вкладка «Время пар» (после «Выходные дни») — рендерится модулем lessonTimes.js
+// Новая вкладка «Время пар» (после «Выходные дни») — рендерится модулем lessonTimes.js
 const LESSON_TIMES_TAB = { key: "lesson_times", title: "Время пар" };
+// Старая вкладка со строками «9:00-9:45» переименована, чтобы не было двух «Время пар»
+const BELL_TAB = { key: "bell", title: "Звонки" };
+const BELL_TYPES = [
+  { key: "workday", title: "Рабочие дни", maxSlots: 10 },
+  { key: "holiday", title: "Праздничные / сокращённые", maxSlots: 10 },
+];
 
 function tabByKey(key) {
   return TABS.find((t) => t.key === key) || null;
@@ -129,7 +140,7 @@ function escapeHtml(value) {
 
 function renderTabs() {
   if (!tabsWrap) return;
-  const all = [...TABS, DAYSOFF_TAB, LESSON_TIMES_TAB];
+  const all = [...TABS, DAYSOFF_TAB, LESSON_TIMES_TAB, BELL_TAB];
   tabsWrap.innerHTML = all
     .map(
       (t) =>
@@ -237,11 +248,75 @@ async function loadRows(showError = true) {
   renderRows(searchInput?.value || "");
 }
 
+// ---------- Вкладка «Время пар» ----------
+
+function renderBellTable() {
+  if (!tableEl) return;
+  if (!bellData) {
+    tableEl.innerHTML = `<thead><tr><th class="muted">Загрузка…</th></tr></thead>`;
+    return;
+  }
+  tableEl.innerHTML = BELL_TYPES.map((bt) => {
+    const slots = bellData[bt.key] || {};
+    const nums = [...new Set([...Object.keys(slots).map(Number), ...Array.from({ length: bt.maxSlots }, (_, i) => i + 1)])]
+      .filter((n) => n >= 1 && n <= bt.maxSlots)
+      .sort((a, b) => a - b);
+    const rows = nums
+      .map(
+        (n) => `<tr>
+          <td style="width:70px">${n} пара</td>
+          <td><input class="select dict-input" data-bell-type="${bt.key}" data-bell-slot="${n}"
+               value="${escapeHtml(slots[n] ?? "")}" placeholder="9:00-9:45 - 9:50-10:30" /></td>
+        </tr>`
+      )
+      .join("");
+    return `<thead><tr><th colspan="3">${bt.title}</th></tr></thead><tbody>${rows}</tbody>`;
+  }).join("");
+}
+
+async function loadBell() {
+  try {
+    bellData = await api.bellSchedule();
+  } catch (e) {
+    bellData = null;
+    alert(`Не удалось загрузить расписание звонков: ${e.message || e}`);
+  }
+  renderBellTable();
+}
+
+async function saveBell() {
+  const payload = {};
+  tableEl.querySelectorAll("input[data-bell-type]").forEach((inp) => {
+    const type = inp.dataset.bellType;
+    const slot = Number(inp.dataset.bellSlot);
+    (payload[type] ||= {})[slot] = inp.value;
+  });
+  try {
+    const res = await api.saveBellSchedule(payload);
+    bellData = res?.data || bellData;
+    renderBellTable();
+    alert("Время пар сохранено.");
+  } catch (e) {
+    alert(`Не удалось сохранить время пар: ${e.message || e}`);
+  }
+}
+
 // ---------- Переключение вкладок ----------
 
 function switchTab(key) {
   activeTab = key;
   renderTabs();
+  if (key === BELL_TAB.key) {
+    hideDaysOffCalendar(); // уходим с календаря, если были на нём
+    if (formWrap) formWrap.innerHTML = "";
+    if (editHint) editHint.classList.add("hidden");
+    if (cancelEditBtn) cancelEditBtn.classList.add("hidden");
+    if (searchInput) searchInput.classList.add("hidden");
+    if (saveBtn) saveBtn.textContent = "Сохранить время пар";
+    tableEl?.classList.add("dict-table-bell");
+    loadBell();
+    return;
+  }
   // Вкладка «Выходные дни»: вместо таблицы — календарь из отдельного модуля
   if (key === DAYSOFF_TAB.key) {
     if (formWrap) formWrap.innerHTML = "";
@@ -249,6 +324,7 @@ function switchTab(key) {
     if (cancelEditBtn) cancelEditBtn.classList.add("hidden");
     if (searchInput) searchInput.classList.add("hidden");
     if (saveBtn) saveBtn.classList.add("hidden"); // день сохраняется по клику
+    tableEl?.classList.remove("dict-table-bell");
     hideLessonTimes(); // уходим с «Времени пар», если были на нём
     showDaysOffCalendar(tableEl);
     return;
@@ -264,6 +340,7 @@ function switchTab(key) {
       saveBtn.classList.remove("hidden");
       saveBtn.textContent = "Сохранить время пар";
     }
+    tableEl?.classList.remove("dict-table-bell");
     showLessonTimes(tableEl);
     return;
   }
@@ -272,6 +349,7 @@ function switchTab(key) {
   editingId = null;
   hideDaysOffCalendar();
   hideLessonTimes();
+  tableEl?.classList.remove("dict-table-bell");
   if (searchInput) searchInput.classList.remove("hidden");
   if (saveBtn) saveBtn.classList.remove("hidden");
   renderForm(tab);
@@ -290,7 +368,8 @@ function collectForm(tab) {
 }
 
 async function saveCurrent() {
-  // Вкладка «Время пар»: сохранение через модуль lessonTimes.js
+  if (activeTab === BELL_TAB.key) return saveBell();
+  // Новая вкладка «Время пар»: сохранение через модуль lessonTimes.js
   if (activeTab === LESSON_TIMES_TAB.key) {
     const ok = await saveLessonTimes();
     if (ok) {
@@ -359,11 +438,132 @@ function refreshStateAfterDictChange(key) {
   }, 0);
 }
 
+// ---------- Перемещение и изменение размера окна ----------
+
+const POS_STORAGE_KEY = "dictModalPos"; // { left, top, width, height } в px
+const MIN_W = 360;
+const MIN_H = 260;
+
+// Переводит окно из «центрированного» flex-состояния в абсолютное позиционирование
+function ensureAbsolutePositioned() {
+  if (!boxEl || !overlay) return;
+  if (boxEl.style.position === "absolute") return;
+  const rect = boxEl.getBoundingClientRect();
+  const ovRect = overlay.getBoundingClientRect();
+  boxEl.style.position = "absolute";
+  boxEl.style.left = `${rect.left - ovRect.left}px`;
+  boxEl.style.top = `${rect.top - ovRect.top}px`;
+  boxEl.style.width = `${rect.width}px`;
+  boxEl.style.height = `${rect.height}px`;
+  boxEl.style.maxHeight = "none";
+  boxEl.style.margin = "0";
+  boxEl.setAttribute("data-resized", ""); // включает flex-раскладку с прокруткой body
+}
+
+function clampBoxToOverlay() {
+  if (!boxEl || !overlay) return;
+  const ovW = overlay.clientWidth;
+  const ovH = overlay.clientHeight;
+  const w = Math.min(boxEl.offsetWidth, ovW);
+  const h = Math.min(boxEl.offsetHeight, ovH);
+  let left = parseFloat(boxEl.style.left) || 0;
+  let top = parseFloat(boxEl.style.top) || 0;
+  left = Math.max(0, Math.min(left, ovW - w));
+  top = Math.max(0, Math.min(top, ovH - h));
+  boxEl.style.left = `${left}px`;
+  boxEl.style.top = `${top}px`;
+}
+
+function saveBoxGeometry() {
+  if (!boxEl) return;
+  try {
+    localStorage.setItem(
+      POS_STORAGE_KEY,
+      JSON.stringify({
+        left: parseFloat(boxEl.style.left) || 0,
+        top: parseFloat(boxEl.style.top) || 0,
+        width: boxEl.offsetWidth,
+        height: boxEl.offsetHeight,
+      })
+    );
+  } catch (_) {
+    /* localStorage может быть недоступен — не критично */
+  }
+}
+
+function restoreBoxGeometry() {
+  if (!boxEl || !overlay) return;
+  let saved = null;
+  try {
+    saved = JSON.parse(localStorage.getItem(POS_STORAGE_KEY) || "null");
+  } catch (_) {
+    saved = null;
+  }
+  if (!saved || typeof saved.left !== "number") return; // окно по центру (по умолчанию)
+  ensureAbsolutePositioned();
+  boxEl.style.left = `${saved.left}px`;
+  boxEl.style.top = `${saved.top}px`;
+  boxEl.style.width = `${Math.max(MIN_W, saved.width || MIN_W)}px`;
+  boxEl.style.height = `${Math.max(MIN_H, saved.height || MIN_H)}px`;
+  clampBoxToOverlay();
+}
+
+// Общий обработчик drag&drop: mode = "move" (за заголовок) или "resize" (за уголок)
+function startDrag(e, mode) {
+  if (!boxEl || !overlay) return;
+  if (mode === "move" && e.target.closest("button")) return; // клик по ✕ не должен двигать окно
+  e.preventDefault();
+  ensureAbsolutePositioned();
+
+  const startX = e.clientX;
+  const startY = e.clientY;
+  const startLeft = parseFloat(boxEl.style.left) || 0;
+  const startTop = parseFloat(boxEl.style.top) || 0;
+  const startW = boxEl.offsetWidth;
+  const startH = boxEl.offsetHeight;
+  const ovRect = overlay.getBoundingClientRect();
+  document.body.style.userSelect = "none";
+  document.body.classList.add("dict-modal-dragging");
+
+  const onMove = (ev) => {
+    const dx = ev.clientX - startX;
+    const dy = ev.clientY - startY;
+    if (mode === "move") {
+      boxEl.style.left = `${startLeft + dx}px`;
+      boxEl.style.top = `${startTop + dy}px`;
+      clampBoxToOverlay();
+    } else {
+      const maxW = ovRect.width - (parseFloat(boxEl.style.left) || 0) - 4;
+      const maxH = ovRect.height - (parseFloat(boxEl.style.top) || 0) - 4;
+      boxEl.style.width = `${Math.max(MIN_W, Math.min(startW + dx, maxW))}px`;
+      boxEl.style.height = `${Math.max(MIN_H, Math.min(startH + dy, maxH))}px`;
+    }
+  };
+  const onUp = () => {
+    window.removeEventListener("mousemove", onMove);
+    window.removeEventListener("mouseup", onUp);
+    document.body.style.userSelect = "";
+    document.body.classList.remove("dict-modal-dragging");
+    saveBoxGeometry();
+  };
+  window.addEventListener("mousemove", onMove);
+  window.addEventListener("mouseup", onUp);
+}
+
+function initDictModalDragResize() {
+  headerEl?.addEventListener("mousedown", (e) => startDrag(e, "move"));
+  resizeEl?.addEventListener("mousedown", (e) => startDrag(e, "resize"));
+  window.addEventListener("resize", () => {
+    if (overlay && !overlay.classList.contains("hidden")) clampBoxToOverlay();
+  });
+}
+
 // ---------- Открытие / закрытие ----------
 
 function openDictModal() {
   if (!overlay) return;
   overlay.classList.remove("hidden");
+  restoreBoxGeometry();
   switchTab(activeTab);
 }
 
@@ -384,6 +584,8 @@ export function initDictModal() {
     if (e.key === "Escape" && overlay && !overlay.classList.contains("hidden")) closeDictModal();
   });
 
+  initDictModalDragResize();
+
   tabsWrap?.addEventListener("click", (e) => {
     const btn = e.target.closest("[data-tab]");
     if (btn) switchTab(btn.dataset.tab);
@@ -399,6 +601,13 @@ export function initDictModal() {
   searchInput?.addEventListener("input", () => renderRows(searchInput.value));
 
   tableEl?.addEventListener("click", (e) => {
+    const reset = e.target.closest("[data-bell-reset]");
+    if (reset) {
+      const [type, slot] = reset.dataset.bellReset.split(":");
+      const inp = tableEl.querySelector(`input[data-bell-type="${type}"][data-bell-slot="${slot}"]`);
+      if (inp) inp.value = "";
+      return;
+    }
     const actionBtn = e.target.closest("[data-action]");
     const tr = e.target.closest("tr[data-id]");
     if (!tr) return;

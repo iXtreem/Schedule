@@ -1,3 +1,4 @@
+
 <!doctype html>
 <html lang="ru">
   <head>
@@ -7,14 +8,14 @@
     <link rel="stylesheet" href="week-ui.css" />
     <link rel="stylesheet" href="style.css" />
   </head>
-  
+
   <body>
-    
+
     <header class="header">
          <!-- Модалка: справочники (группы, преподаватели, предметы, аудитории, недели, время пар) -->
     <div id="dictModalOverlay" class="modal-overlay hidden">
-      <div class="modal dict-modal">
-        <div class="modal-header">
+      <div class="modal dict-modal" id="dictModalBox">
+        <div class="modal-header" id="dictModalHeader">
           <div>
             <h2 class="modal-title">Справочники</h2>
             <div class="modal-subtitle">
@@ -54,6 +55,8 @@
             Сохранить
           </button>
         </div>
+        <!-- Ручка изменения размера окна «Справочники» -->
+        <div id="dictModalResize" class="dict-resize-handle" title="Потяните, чтобы изменить размер"></div>
       </div>
     </div>
       <div class="header-top">
@@ -133,7 +136,7 @@
               <input type="checkbox" id="onlyActiveGroups" checked />
               Только актуальные (последние 4 года)
             </label>
-            
+
           </div>
 
           <div class="field field-wide groups-only">
@@ -525,5 +528,5 @@
     <script type="module" src="app.js"></script>
   </body>
   <button class="btn">Отправить</button>
-  
+
 </html>
