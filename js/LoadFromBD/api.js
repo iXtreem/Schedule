@@ -183,4 +183,39 @@ export const api = {
       {},
       [],
     ),
+
+      dictList: (name) => requestJson(`${API}?entity=dict_${name}`, {}, []),
+
+  dictCreate: (name, payload) =>
+    requestJson(`${API}?entity=dict_${name}`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(payload),
+      throwOnError: true,
+    }),
+
+  dictUpdate: (name, payload) =>
+    requestJson(`${API}?entity=dict_${name}`, {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(payload),
+      throwOnError: true,
+    }),
+
+  dictDelete: (name, id) =>
+    requestJson(
+      `${API}?entity=dict_${name}&id=${encodeURIComponent(String(id))}`,
+      { method: "DELETE", throwOnError: true },
+    ),
+
+  // ===== Расписание звонков (время пар) =====
+  bellSchedule: () => requestJson(`${API}?entity=bell_schedule`, {}, null),
+
+  saveBellSchedule: (payload) =>
+    requestJson(`${API}?entity=bell_schedule`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(payload),
+      throwOnError: true,
+    }),
 };

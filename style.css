@@ -1,0 +1,1000 @@
+* {
+  box-sizing: border-box;
+}
+body {
+  margin: 0;
+  font-family: Arial, sans-serif;
+  color: #1f2937;
+  background: #f6f7fb;
+}
+
+.header {
+  padding: 16px 20px;
+  background: #ffffff;
+  border-bottom: 1px solid #e5e7eb;
+}
+.header-top {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 12px;
+}
+.header-auth {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+}
+.title {
+  margin: 0 0 6px;
+  font-size: 22px;
+}
+.subtitle {
+  margin: 0;
+  color: #6b7280;
+  font-size: 14px;
+}
+
+.container {
+  padding: 16px 20px;
+  /* max-width: 1200px; */
+  margin: 0 auto;
+}
+
+.panel {
+  background: #fff;
+  border: 1px solid #e5e7eb;
+  border-radius: 10px;
+  padding: 12px;
+  margin-bottom: 14px;
+}
+
+.view-tabs {
+  display: inline-flex;
+  gap: 8px;
+  margin-bottom: 12px;
+}
+
+.view-tab {
+  height: 36px;
+  padding: 0 14px;
+  border: 1px solid #cbd5e1;
+  border-radius: 999px;
+  background: #fff;
+  color: #1f2937;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.view-tab:hover {
+  background: #f8fafc;
+}
+
+.view-tab.is-active {
+  border-color: #2563eb;
+  background: #2563eb;
+  color: #fff;
+}
+
+.panel-row {
+  display: flex;
+  gap: 12px;
+  align-items: start;
+}
+
+.field {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.field-full {
+  grid-column: 1 / -1;
+}
+.field-wide {
+  min-width: 260px;
+  height: 200px;
+}
+
+.label {
+  font-size: 13px;
+  color: #374151;
+}
+
+.select {
+  height: 36px;
+  padding: 6px 10px;
+  border: 1px solid #d1d5db;
+  border-radius: 8px;
+  background: #fff;
+  outline: none;
+}
+.select:focus {
+  border-color: #2563eb;
+}
+
+.textarea-input {
+  width: 100%;
+  min-height: 84px;
+  padding: 8px 10px;
+  border: 1px solid #d1d5db;
+  border-radius: 8px;
+  background: #fff;
+  outline: none;
+  resize: vertical;
+  font: inherit;
+  line-height: 1.35;
+}
+
+.textarea-input:focus {
+  border-color: #2563eb;
+}
+
+.groups {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px 14px;
+  padding: 8px 10px;
+  border: 1px solid #d1d5db;
+  border-radius: 8px;
+  background: #fff;
+  min-height: 36px;
+}
+
+.group-item {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 14px;
+}
+.group-item input {
+  transform: translateY(1px);
+}
+
+.btn {
+  height: 36px;
+  padding: 0 12px;
+  border: none;
+  border-radius: 8px;
+  cursor: pointer;
+  font-weight: 600;
+}
+.btn-primary {
+  background: #2563eb;
+  color: #fff;
+}
+.btn-primary:hover {
+  background: #1d4ed8;
+}
+.btn-danger {
+  background: #ef4444;
+  color: #fff;
+}
+.btn-danger:hover {
+  background: #dc2626;
+}
+.btn-secondary {
+  background: #e5e7eb;
+  color: #111827;
+}
+.btn-secondary:hover {
+  background: #d1d5db;
+}
+
+.hint {
+  margin-top: 10px;
+  background: #f3f4f6;
+  border: 1px dashed #d1d5db;
+  padding: 10px;
+  border-radius: 8px;
+  color: #6b7280;
+  font-size: 13px;
+}
+
+.table-wrap {
+  overflow: auto;
+  border-radius: 10px;
+  border: 1px solid #e5e7eb;
+  background: #fff;
+}
+
+.table {
+  width: 100%;
+  border-collapse: collapse;
+  min-width: 900px;
+  overflow-x: scroll;
+}
+
+.table th,
+.table td {
+  border: 1px solid #e5e7eb;
+  padding: 8px;
+  vertical-align: top;
+}
+
+.table th {
+  background: #f9fafb;
+  text-align: left;
+  position: sticky;
+  top: 0;
+  /* z-index: 1; */
+}
+
+.day-cell {
+  background: #fcfcff;
+  width: 170px;
+}
+
+.time-cell {
+  width: 140px;
+  white-space: nowrap;
+}
+
+.clickable {
+  cursor: pointer;
+  min-width: 300px;
+}
+.muted {
+  color: #6b7280;
+  font-size: 12px;
+}
+
+/* ===== Modal ===== */
+.hidden {
+  display: none;
+}
+
+.modal-overlay.hidden {
+  display: none;
+}
+
+.modal-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.45);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 16px;
+}
+
+.modal {
+  /* width: 900px; */
+  max-width: 100%;
+  background: #fff;
+  border-radius: 12px;
+  border: 1px solid #e5e7eb;
+  overflow: hidden;
+}
+
+.modal-header {
+  padding: 12px 14px;
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 10px;
+  border-bottom: 1px solid #e5e7eb;
+}
+
+.modal-title {
+  margin: 0;
+  font-size: 18px;
+}
+.modal-subtitle {
+  margin-top: 4px;
+  color: #6b7280;
+  font-size: 13px;
+}
+
+.icon-btn {
+  border: 1px solid #e5e7eb;
+  background: #fff;
+  border-radius: 8px;
+  width: 34px;
+  height: 34px;
+  cursor: pointer;
+}
+.icon-btn:hover {
+  background: #f3f4f6;
+}
+
+.modal-body {
+  padding: 14px;
+}
+
+.form-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 12px;
+}
+
+.modal-footer {
+  padding: 12px 14px;
+  border-top: 1px solid #e5e7eb;
+  display: flex;
+  justify-content: flex-end;
+  gap: 10px;
+}
+
+.lesson-cell {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.lesson-subject {
+  font-weight: 700; /* жирный */
+  text-align: left; /* к левому краю */
+}
+
+.lesson-custom-text {
+  font-weight: 700;
+  text-align: left;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+.lesson-hours {
+  font-weight: 400; /* (1 час) не жирный */
+  margin-left: 6px;
+  opacity: 0.85;
+}
+
+.lesson-type {
+  font-weight: 400; /* обычный */
+  text-align: left;
+}
+
+.lesson-type--strong {
+  font-weight: 700; /* жирный */
+  text-decoration: underline; /* подчёркнутый */
+  text-underline-offset: 2px;
+}
+
+.lesson-teacher {
+  padding-right: 20px;
+  display: block;
+  text-align: right; /* вправо */
+  font-style: italic; /* курсив */
+}
+
+/* Room preferences modal */
+.room-prefs-modal {
+  width: 1120px;
+  min-width: 1120px;
+  max-width: 1120px;
+}
+
+.room-pref-layout {
+  display: grid;
+  grid-template-columns: 1.15fr 0.85fr;
+  gap: 16px;
+}
+
+.room-pref-editor,
+.room-pref-overview-panel {
+  border: 1px solid #e5e7eb;
+  border-radius: 10px;
+  padding: 12px;
+  background: #fff;
+}
+
+.room-pref-toolbar {
+  margin-top: 6px;
+  margin-bottom: 8px;
+}
+
+.btn-outline {
+  border: 1px solid #d1d5db;
+  background: #fff;
+  color: #111827;
+}
+
+.btn-outline:hover {
+  background: #f3f4f6;
+}
+
+.room-pref-rows {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  max-height: 320px;
+  overflow: auto;
+}
+
+.room-pref-row {
+  display: grid;
+  grid-template-columns: minmax(180px, 1fr) 120px 140px auto;
+  gap: 8px;
+  align-items: center;
+}
+
+.room-pref-priority {
+  width: 100%;
+}
+
+.room-pref-primary-cell {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  color: #374151;
+  font-size: 14px;
+}
+
+.room-pref-remove-btn {
+  height: 36px;
+  padding: 0 10px;
+  border: 1px solid #fca5a5;
+  color: #b91c1c;
+  background: #fff;
+  border-radius: 8px;
+  cursor: pointer;
+}
+
+.room-pref-remove-btn:hover {
+  background: #fee2e2;
+}
+
+.room-pref-overview {
+  margin-top: 8px;
+  max-height: 420px;
+  overflow: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.room-pref-overview-item {
+  border: 1px solid #e5e7eb;
+  border-radius: 10px;
+  padding: 10px;
+}
+
+.room-pref-overview-subject {
+  font-weight: 700;
+  margin-bottom: 8px;
+}
+
+.room-pref-overview-rooms {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.room-pref-overview-room {
+  display: inline-flex;
+  align-items: center;
+  border: 1px solid #d1d5db;
+  border-radius: 999px;
+  padding: 4px 10px;
+  font-size: 13px;
+  background: #f9fafb;
+}
+
+.room-pref-overview-room-label {
+  display: inline-flex;
+  align-items: center;
+}
+
+.room-pref-overview-delete-btn {
+  margin-left: 6px;
+  width: 20px;
+  height: 20px;
+  border: none;
+  border-radius: 999px;
+  background: transparent;
+  color: #b91c1c;
+  font-size: 16px;
+  line-height: 1;
+  cursor: pointer;
+  padding: 0;
+}
+
+.room-pref-overview-delete-btn:hover {
+  background: #fee2e2;
+}
+
+.room-pref-overview-delete-btn:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+
+.room-pref-overview-room--primary {
+  border-color: #86efac;
+  background: #f0fdf4;
+}
+
+/* Lesson modal: preferred room highlight */
+#roomSelect.room-select-pref {
+  border-color: #16a34a;
+  background: #f0fdf4;
+  box-shadow: 0 0 0 2px rgba(34, 197, 94, 0.16);
+}
+
+#roomSelect.room-select-pref-primary {
+  border-color: #15803d;
+  background: #dcfce7;
+  box-shadow: 0 0 0 2px rgba(22, 163, 74, 0.2);
+}
+
+@media (max-width: 1160px) {
+  .room-prefs-modal {
+    width: calc(100vw - 32px);
+    max-width: calc(100vw - 32px);
+    min-width: 0;
+  }
+}
+
+/*Стили для отображения по 3 блока */
+/* --- Панель --- */
+.panel {
+  padding: 16px;
+}
+
+/* .panel-row {
+    display: grid;
+    grid-template-columns: 380px 1fr;
+    gap: 16px;
+    align-items: start;
+} */
+
+/* Левая колонка (неделя + кнопки) */
+.panel-row > .field:first-child {
+  grid-column: 1;
+}
+
+/* Блоки управления группами — тоже влево */
+.group-tools,
+.group-triplets,
+.panel-row > .field:last-child {
+  grid-column: 1;
+}
+
+/* Правая колонка (поиск + список групп) */
+.field-wide {
+  grid-column: 2;
+}
+
+/* --- Неделя --- */
+.week-row {
+  display: grid;
+  gap: 6px;
+  margin-bottom: 12px;
+}
+
+.week-controls {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+}
+
+#addWeekBtn {
+  width: 40px;
+  min-width: 40px;
+  padding: 0;
+}
+
+/* --- Инструменты групп --- */
+.group-tools,
+.group-triplets {
+  background: #0f172a08;
+  border: 1px solid #0f172a1a;
+  border-radius: 10px;
+  padding: 10px;
+}
+
+.group-tools {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: center;
+}
+
+.group-tools label {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  user-select: none;
+}
+
+.group-triplets {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: center;
+}
+
+.group-export-builder {
+  background: #0f172a08;
+  border: 1px solid #0f172a1a;
+  border-radius: 10px;
+  padding: 10px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.export-builder-modal {
+  width: 920px;
+  max-width: 100%;
+}
+
+.export-builder-modal .modal-body {
+  max-height: 72vh;
+  overflow: auto;
+}
+
+.group-export-builder-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: center;
+}
+
+.group-export-builder-row .select {
+  min-width: 260px;
+}
+
+.export-bundles-list {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.export-bundle-item {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 10px;
+  border: 1px solid #d1d5db;
+  border-radius: 8px;
+  background: #fff;
+}
+
+.export-bundle-text {
+  font-size: 13px;
+  color: #111827;
+}
+
+.export-bundle-remove {
+  height: 30px;
+  padding: 0 10px;
+  border: 1px solid #fca5a5;
+  border-radius: 8px;
+  color: #b91c1c;
+  background: #fff;
+  cursor: pointer;
+}
+
+.export-bundle-remove:hover {
+  background: #fee2e2;
+}
+
+.export-buttons-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  align-items: center;
+}
+
+#tripletInfo {
+  min-width: 52px;
+  text-align: center;
+}
+
+/* --- Поле поиска + список групп --- */
+.field-wide .label {
+  display: block;
+  margin-bottom: 6px;
+}
+
+#groupSearch {
+  width: 100%;
+  margin-bottom: 10px;
+}
+
+/* ВАЖНО: скролл для списка групп */
+#groupBox.groups {
+  max-height: 320px; /* можешь увеличить до 420 */
+  overflow: auto;
+  border: 1px solid #0f172a1a;
+  border-radius: 10px;
+  padding: 10px;
+  background: #fff;
+}
+
+/* чекбоксы групп (аккуратная сетка) */
+#groupBox .group-row,
+#groupBox .group-item {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 6px 6px;
+  border-radius: 8px;
+}
+
+#groupBox .group-row:hover,
+#groupBox .group-item:hover {
+  background: #0f172a08;
+}
+
+/* --- Кнопки (если у тебя есть свои .btn — это просто улучшение) --- */
+.group-tools button,
+.group-triplets button {
+  padding: 8px 10px;
+  border-radius: 10px;
+  border: 1px solid #0f172a1a;
+  background: #fff;
+  cursor: pointer;
+}
+
+.group-tools button:hover,
+.group-triplets button:hover {
+  background: #0f172a08;
+}
+
+.group-triplets select {
+  min-width: 240px;
+}
+
+/* --- Нижний блок кнопок --- */
+.panel-row > .field:last-child {
+  display: flex;
+  gap: 10px;
+}
+
+/* --- Подсказка --- */
+.hint {
+  margin-top: 14px;
+  padding: 10px 12px;
+  border-radius: 10px;
+  background: #0f172a08;
+  border: 1px solid #0f172a1a;
+}
+
+#roomPrefSubjectSelect {
+  max-width: 500px;
+}
+
+/* --- Адаптив: на узких экранах в одну колонку --- */
+@media (max-width: 900px) {
+  .panel-row {
+    grid-template-columns: 1fr;
+  }
+  .field-wide,
+  .group-tools,
+  .group-triplets,
+  .group-export-builder,
+  .panel-row > .field:first-child,
+  .panel-row > .field:last-child {
+    grid-column: 1;
+  }
+}
+
+/* Адаптив */
+@media (max-width: 900px) {
+  .header-top {
+    flex-direction: column;
+    align-items: flex-start;
+  }
+  .panel-row {
+    grid-template-columns: 1fr;
+  }
+  .form-grid {
+    grid-template-columns: 1fr;
+  }
+  .room-pref-layout {
+    grid-template-columns: 1fr;
+  }
+  .room-pref-row {
+    grid-template-columns: 1fr;
+  }
+}
+
+.teacher-tools {
+  max-width: 420px;
+  margin-bottom: 12px;
+}
+
+.teacher-col-head {
+  min-width: 220px;
+}
+
+.teacher-cell {
+  min-width: 220px;
+}
+
+.teacher-lesson-meta {
+  margin-top: 2px;
+  color: #374151;
+  font-size: 13px;
+}
+
+.teacher-lesson-type {
+  margin-top: 2px;
+}
+
+.login-page {
+  min-height: 100vh;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 24px;
+  background:
+    radial-gradient(1200px 420px at 8% -15%, #dbeafe 0%, transparent 58%),
+    radial-gradient(820px 360px at 98% 115%, #fde68a 0%, transparent 55%),
+    linear-gradient(160deg, #f8fafc 0%, #eef2ff 48%, #fff7ed 100%);
+}
+
+.login-card {
+  width: 460px;
+  max-width: 100%;
+  border: 1px solid #dbe4f3;
+  background: rgba(255, 255, 255, 0.96);
+  border-radius: 16px;
+  padding: 22px 20px 18px;
+  box-shadow:
+    0 20px 48px rgba(37, 99, 235, 0.14),
+    0 8px 22px rgba(15, 23, 42, 0.1);
+}
+
+.login-card .title {
+  margin-bottom: 10px;
+  font-size: 28px;
+}
+
+.login-card .subtitle {
+  margin-bottom: 14px;
+  color: #4b5563;
+  line-height: 1.35;
+}
+
+.login-card .field {
+  margin-bottom: 8px;
+}
+
+.login-card .select {
+  height: 40px;
+  border-color: #cbd5e1;
+}
+
+.login-card .select:focus {
+  border-color: #2563eb;
+  box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.16);
+}
+
+.login-actions {
+  display: flex;
+  margin-top: 14px;
+}
+
+.login-actions .btn {
+  width: 100%;
+  height: 40px;
+  font-size: 15px;
+}
+
+.login-page .hint {
+  margin-top: 12px;
+  border-style: solid;
+  border-color: #fecaca;
+  background: #fef2f2;
+  color: #991b1b;
+}
+
+@media (max-width: 560px) {
+  .login-page {
+    padding: 14px;
+  }
+  .login-card {
+    border-radius: 12px;
+    padding: 16px 14px;
+  }
+  .login-card .title {
+    font-size: 24px;
+  }
+}
+
+/* ===== Модалка «Справочники» ===== */
+.dict-modal {
+  max-width: 860px;
+  width: min(92vw, 860px);
+}
+
+.dict-tabs {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-bottom: 12px;
+}
+
+.dict-tab {
+  border: 1px solid #d7dbе3;
+  border: 1px solid #d7dbe3;
+  background: #f4f6fa;
+  color: #333;
+  border-radius: 8px;
+  padding: 6px 12px;
+  font-size: 14px;
+  cursor: pointer;
+}
+
+.dict-tab:hover {
+  background: #e8ecf4;
+}
+
+.dict-tab.active {
+  background: #2f6fed;
+  border-color: #2f6fed;
+  color: #fff;
+}
+
+.dict-form {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+  gap: 10px;
+  margin-bottom: 10px;
+}
+
+.dict-field {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  font-size: 13px;
+  color: #555;
+}
+
+.dict-input {
+  width: 100%;
+  box-sizing: border-box;
+}
+
+.dict-toolbar {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 8px;
+}
+
+.dict-toolbar .select {
+  flex: 0 0 240px;
+}
+
+.dict-edit-hint {
+  font-size: 13px;
+}
+
+.dict-table-wrap {
+  max-height: 320px;
+  overflow: auto;
+  border: 1px solid #e3e6ee;
+  border-radius: 8px;
+}
+
+.dict-table th {
+  position: sticky;
+  top: 0;
+  background: #f4f6fa;
+  z-index: 1;
+}
+
+.dict-table tbody tr {
+  cursor: pointer;
+}
+
+.dict-table tbody tr:hover {
+  background: #eef3ff;
+}
+
+.dict-table tbody tr.dict-row-active {
+  background: #dcebff;
+}
+
+.dict-actions {
+  white-space: nowrap;
+  text-align: right;
+}
+
+.dict-table-bell thead th {
+  text-align: left;
+}

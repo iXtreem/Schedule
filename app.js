@@ -225,6 +225,13 @@ function bindAuthActions() {
 let eventsBound = false;
 
 async function init() {
+  // Кнопки модальных окон привязываем СРАЗУ, до любых обращений к серверу.
+  // Иначе при недоступном API (не запущен MySQL/Apache, ошибка в PHP)
+  // init() прерывается выше этой строки — и кнопки «Справочники»,
+  // «Закрепление кабинета» и т.п. остаются без обработчиков («ничего не происходит»).
+  initRoomPrefsModal();
+  initDictModal();
+
   const authUser = await ensureAuthorized();
   if (!authUser) return;
 
@@ -259,9 +266,6 @@ async function init() {
     ...x,
     id: Number(x.id),
   }));
-
-  initRoomPrefsModal();
-  initDictModal();
 
   window.addEventListener("dict-changed", async (e) => {
     const kind = e.detail?.kind;
@@ -934,4 +938,9 @@ function buildExportBundlePlan() {
 }
 
 
-init();
+// init() запускаем с защитой: если сервер недоступен или вернул ошибку —
+// выводим её в консоль, но ранее привязанные кнопки (в т.ч. «Справочники»)
+// продолжают работать и окно открывается.
+init().catch((err) => {
+  console.error("Ошибка инициализации приложения:", err);
+});

@@ -7,7 +7,9 @@
     <link rel="stylesheet" href="week-ui.css" />
     <link rel="stylesheet" href="style.css" />
   </head>
+  
   <body>
+    
     <header class="header">
          <!-- Модалка: справочники (группы, преподаватели, предметы, аудитории, недели, время пар) -->
     <div id="dictModalOverlay" class="modal-overlay hidden">
@@ -59,6 +61,9 @@
           <h1 class="title">Расписание</h1>
           <p class="subtitle">Учебный проект</p>
         </div>
+        <button id="dictBtn" class="btn" type="button">
+            Справочники
+        </button>
         <div class="header-auth">
           <span id="authUserLabel" class="muted"></span>
           <button id="logoutBtn" class="btn btn-secondary" type="button">
@@ -125,6 +130,7 @@
               <input type="checkbox" id="onlyActiveGroups" checked />
               Только актуальные (последние 4 года)
             </label>
+            
           </div>
 
           <div class="field field-wide groups-only">
@@ -141,9 +147,6 @@
             <button id="applyGroups" class="btn btn-primary">Применить</button>
             <button id="roomPrefsBtn" class="btn" type="button">
               Закрепление кабинета
-            </button>
-            <button id="dictBtn" class="btn" type="button">
-              Справочники
             </button>
           </div>
 
