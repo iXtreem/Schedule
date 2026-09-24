@@ -1,17 +1,21 @@
+
 <?php
 require_once __DIR__ . '/../../lib/db.php';
 
+// Список преподавателей (таблица teacher — новая схема, бывшая TB_Teacher)
+// ФИО собирается в одно поле name через CONCAT_WS
 function repoGetTeachers($conn) {
   return dbAll(
     $conn,
     "SELECT
-        idTeacher AS id,
+        id,
         CONCAT_WS(' ',
-          TRIM(TeacherSurname),
-          TRIM(TeacherFirstName),
-          TRIM(TeacherLastName)
+          TRIM(surname),
+          TRIM(first_name),
+          TRIM(patronymic)
         ) AS name
-     FROM TB_Teacher
-     ORDER BY TeacherSurname, TeacherFirstName"
+     FROM teacher
+     WHERE is_deleted = 0
+     ORDER BY surname, first_name"
   );
 }

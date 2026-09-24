@@ -1,7 +1,7 @@
+
 import { state, scheduleTable } from "../../../app.js";
 import {
     formatDateForDisplay,
-    formatDateForInput,
     getDayType,
     getMaxPairs,
     getTimeSlots,
@@ -58,14 +58,27 @@ export function renderTable() {
     }
 
     //Заголовок
+    // ВАЖНО (почему НЕ используется table-layout: fixed):
+    //   При «fixed»-раскладке браузер распределяет всю leftover-ширину
+    //   таблицы между колонками, и первый столбец («День») визуально
+    //   растягивается сильнее остальных — именно на это жаловался пользователь.
+    //   Поэтому раскладку делаем «auto», а ВСЕ ячейки (включая <th>) принудительно
+    //   ограничиваем одинаковой шириной через inline-style width + max-width.
+    //   Это даёт гарантированно равные столбцы независимо от содержимого.
+    const COL_W = 150; // пикселей — единая ширина для всех столбцов
+    const cellW = `style="width:${COL_W}px;max-width:${COL_W}px;"`;
+
     let html = `
     <thead>
         <tr>
-            <th>День</th>
-            <th>№</th>
-            <th class="time-cell">Время</th>
+            <th ${cellW}>День</th>
+            <th ${cellW}>№</th>
+            <th ${cellW}>Время</th>
             ${visibleGroups
-                .map((g) => `<th>${g.name}</th><th>Ауд.</th>`)
+                .map(
+                    (g) =>
+                        `<th ${cellW}>${escapeHtml(g.name || "")}</th><th ${cellW}>Ауд.</th>`,
+                )
                 .join("")}
         </tr>
     </thead>
@@ -80,8 +93,9 @@ export function renderTable() {
         const maxPairs = getMaxPairs(dayType);
         const timeSlots = getTimeSlots(dayType);
 
-        const dateStr = formatDateForInput(date);
-        const isHoliday = state.holidays.includes(dateStr);
+        // Тумблер рабочего/выходного дня из таблицы убран:
+        // выходные дни теперь отмечаются в окне «Справочники» → вкладка «Выходные дни».
+        // (isHoliday больше не используется здесь)
 
         for (let pairIndex = 0; pairIndex < maxPairs; pairIndex++) {
             const dayOfWeek = dayIndex + 1;
@@ -91,18 +105,9 @@ export function renderTable() {
 
             if (pairIndex === 0) {
                 html += `
-                <td class="day-cell" rowspan="${maxPairs}" data-date="${dateStr}">
+                <td class="day-cell" rowspan="${maxPairs}">
                     <div><b>${DAY_NAMES[dayIndex]}</b></div>
                     <div class="muted">${formatDateForDisplay(date)}</div>
-
-                    <label class="switch-row">
-                    <span class="muted">Праздник</span>
-                    <input class="holiday-toggle" type="checkbox" ${
-                        isHoliday ? "checked" : ""
-                    }>
-                    <span class="switch"></span>
-                    </label>
-
                     <div class="muted">Тип: ${dayType}</div>
                 </td>
                 `;

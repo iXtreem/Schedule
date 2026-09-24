@@ -1,15 +1,17 @@
+
 <?php
 require_once __DIR__ . '/../../lib/db.php';
 
+// Список дисциплин (таблица discipline — новая схема, бывшая TB_Discipl)
 function repoGetSubjects($conn) {
   return dbAll(
     $conn,
     "SELECT
-        idDiscipl AS id,
-        DisciplName AS name,
-        DisciplShortName AS short_name
-     FROM TB_Discipl
-     WHERE DisciplDeleted = 0
-     ORDER BY DisciplName"
+        id,
+        name,
+        short_name
+     FROM discipline
+     WHERE is_deleted = 0
+     ORDER BY name"
   );
 }

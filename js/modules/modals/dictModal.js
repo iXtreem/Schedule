@@ -1,7 +1,11 @@
+
 // Модальное окно «Справочники»: добавление/редактирование/удаление
 // групп, преподавателей, предметов, аудиторий, типов занятий,
 // учебных недель и времени пар — без доступа к базе данных.
 import { api } from "../../LoadFromBD/api.js";
+import { showDaysOffCalendar, hideDaysOffCalendar } from "./daysOffCalendar.js";
+// Модуль новой вкладки «Время пар»: настройка начала пар и длительности перемен
+import { showLessonTimes, hideLessonTimes, saveLessonTimes } from "./lessonTimes.js";
 
 const openBtn = document.getElementById("dictBtn");
 const overlay = document.getElementById("dictModalOverlay");
@@ -106,10 +110,14 @@ const TABS = [
   },
 ];
 
-const BELL_TAB = { key: "bell", title: "Время пар" };
+// Вкладка «Выходные дни» — календарь, отрисовываемый модулем daysOffCalendar.js
+const DAYSOFF_TAB = { key: "daysoff", title: "Выходные дни" };
+// Новая вкладка «Время пар» (после «Выходные дни») — рендерится модулем lessonTimes.js
+const LESSON_TIMES_TAB = { key: "lesson_times", title: "Время пар" };
+// Старая вкладка со строками «9:00-9:45» переименована, чтобы не было двух «Время пар»
+const BELL_TAB = { key: "bell", title: "Звонки" };
 const BELL_TYPES = [
-  { key: "workday", title: "Рабочие дни", maxSlots: 7 },
-  { key: "sunday", title: "Воскресенье", maxSlots: 7 },
+  { key: "workday", title: "Рабочие дни", maxSlots: 10 },
   { key: "holiday", title: "Праздничные / сокращённые", maxSlots: 10 },
 ];
 
@@ -128,7 +136,7 @@ function escapeHtml(value) {
 
 function renderTabs() {
   if (!tabsWrap) return;
-  const all = [...TABS, BELL_TAB];
+  const all = [...TABS, DAYSOFF_TAB, LESSON_TIMES_TAB, BELL_TAB];
   tabsWrap.innerHTML = all
     .map(
       (t) =>
@@ -298,6 +306,7 @@ function switchTab(key) {
   activeTab = key;
   renderTabs();
   if (key === BELL_TAB.key) {
+    hideDaysOffCalendar(); // уходим с календаря, если были на нём
     if (formWrap) formWrap.innerHTML = "";
     if (editHint) editHint.classList.add("hidden");
     if (cancelEditBtn) cancelEditBtn.classList.add("hidden");
@@ -307,11 +316,41 @@ function switchTab(key) {
     loadBell();
     return;
   }
+  // Вкладка «Выходные дни»: вместо таблицы — календарь из отдельного модуля
+  if (key === DAYSOFF_TAB.key) {
+    if (formWrap) formWrap.innerHTML = "";
+    if (editHint) editHint.classList.add("hidden");
+    if (cancelEditBtn) cancelEditBtn.classList.add("hidden");
+    if (searchInput) searchInput.classList.add("hidden");
+    if (saveBtn) saveBtn.classList.add("hidden"); // день сохраняется по клику
+    tableEl?.classList.remove("dict-table-bell");
+    hideLessonTimes(); // уходим с «Времени пар», если были на нём
+    showDaysOffCalendar(tableEl);
+    return;
+  }
+  // Вкладка «Время пар»: редактор начала пар и перемен (модуль lessonTimes.js)
+  if (key === LESSON_TIMES_TAB.key) {
+    hideDaysOffCalendar();
+    if (formWrap) formWrap.innerHTML = "";
+    if (editHint) editHint.classList.add("hidden");
+    if (cancelEditBtn) cancelEditBtn.classList.add("hidden");
+    if (searchInput) searchInput.classList.add("hidden");
+    if (saveBtn) {
+      saveBtn.classList.remove("hidden");
+      saveBtn.textContent = "Сохранить время пар";
+    }
+    tableEl?.classList.remove("dict-table-bell");
+    showLessonTimes(tableEl);
+    return;
+  }
   const tab = tabByKey(key);
   if (!tab) return;
   editingId = null;
+  hideDaysOffCalendar();
+  hideLessonTimes();
   tableEl?.classList.remove("dict-table-bell");
   if (searchInput) searchInput.classList.remove("hidden");
+  if (saveBtn) saveBtn.classList.remove("hidden");
   renderForm(tab);
   setEditing(tab, null);
   loadRows();
@@ -329,6 +368,16 @@ function collectForm(tab) {
 
 async function saveCurrent() {
   if (activeTab === BELL_TAB.key) return saveBell();
+  // Новая вкладка «Время пар»: сохранение через модуль lessonTimes.js
+  if (activeTab === LESSON_TIMES_TAB.key) {
+    const ok = await saveLessonTimes();
+    if (ok) {
+      alert("Время пар сохранено.");
+      window.dispatchEvent(new CustomEvent("dict-changed", { detail: { kind: "bell" } }));
+    }
+    return;
+  }
+  if (activeTab === DAYSOFF_TAB.key) return; // выходные дни сохраняются по клику в календаре
   const tab = tabByKey(activeTab);
   if (!tab) return;
 

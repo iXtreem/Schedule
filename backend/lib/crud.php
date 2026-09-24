@@ -11,92 +11,72 @@ require_once __DIR__ . '/response.php';
 
 if (!function_exists('crudConfig')) {
 
-  // Таблица последовательностей для id (ненулл-колонки не принимают NULL)
-  function crudEnsureSeqTable(mysqli $conn) {
-    static $ok = false;
-    if ($ok) return;
-    $conn->query(
-      "CREATE TABLE IF NOT EXISTS TB_Sequence (
-         SeqName VARCHAR(60)  NOT NULL PRIMARY KEY,
-         LastVal INT          NOT NULL DEFAULT 0
-       ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4"
-    );
-    if ($conn->error) throw new Exception('Не удалось создать таблицу счётчиков: ' . $conn->error);
-    $ok = true;
-  }
-
-  function crudNextId(mysqli $conn, string $table, string $pk): int {
-    crudEnsureSeqTable($conn);
-    $max = (int)dbScalar($conn, "SELECT COALESCE(MAX(`$pk`), 0) FROM `$table`", [], 0);
-    $cur = (int)dbScalar($conn, "SELECT LastVal FROM TB_Sequence WHERE SeqName = ?", [$table], 0);
-    $next = max($max, $cur) + 1;
-    dbExec($conn,
-      "INSERT INTO TB_Sequence (SeqName, LastVal) VALUES (?, ?)
-       ON DUPLICATE KEY UPDATE LastVal = GREATEST(LastVal, VALUES(LastVal))",
-      [$table, $next]);
-    return $next;
-  }
+  // В новой схеме у всех справочников id = AUTO_INCREMENT,
+  // отдельная таблица-счётчик (раньше TB_Sequence) больше не нужна.
 
   function crudConfig() {
+    // Новая схема uchet_lfpstu: таблицы с маленькой буквы, колонки snake_case.
+    // 'fields' — соответствие ключ JSON-запроса => имя колонки в БД.
     return [
       'groups' => [
-        'table'    => 'TB_Group',
-        'pk'       => 'idGroup',
-        'fields'   => ['name' => 'GroupName', 'short_name' => 'GroupShortName', 'year' => 'GroupYear', 'size' => 'GroupMaxContrBook'],
-        'deleted'  => 'GroupDeleted',
+        'table'    => 'student_group',
+        'pk'       => 'id',
+        'fields'   => ['name' => 'name', 'short_name' => 'short_name', 'year' => 'admission_year', 'size' => 'max_students'],
+        'deleted'  => 'is_deleted',
         'required' => ['name'],
-        'unique'   => ['GroupName'],
-        'order'    => 'GroupShortName',
+        'unique'   => ['name'],
+        'order'    => 'short_name',
         'label'    => 'группа',
       ],
       'teachers' => [
-        'table'    => 'TB_Teacher',
-        'pk'       => 'idTeacher',
-        'fields'   => ['surname' => 'TeacherSurname', 'first_name' => 'TeacherFirstName', 'last_name' => 'TeacherLastName'],
-        'deleted'  => null,
+        'table'    => 'teacher',
+        'pk'       => 'id',
+        // last_name в интерфейсе — это отчество (patronymic)
+        'fields'   => ['surname' => 'surname', 'first_name' => 'first_name', 'last_name' => 'patronymic'],
+        'deleted'  => 'is_deleted',
         'required' => ['surname'],
         'unique'   => [],
-        'order'    => 'TeacherSurname, TeacherFirstName',
+        'order'    => 'surname, first_name',
         'label'    => 'преподаватель',
       ],
       'subjects' => [
-        'table'    => 'TB_Discipl',
-        'pk'       => 'idDiscipl',
-        'fields'   => ['name' => 'DisciplName', 'short_name' => 'DisciplShortName'],
-        'deleted'  => 'DisciplDeleted',
+        'table'    => 'discipline',
+        'pk'       => 'id',
+        'fields'   => ['name' => 'name', 'short_name' => 'short_name'],
+        'deleted'  => 'is_deleted',
         'required' => ['name'],
-        'unique'   => ['DisciplName'],
-        'order'    => 'DisciplName',
+        'unique'   => ['name'],
+        'order'    => 'name',
         'label'    => 'дисциплина',
       ],
       'rooms' => [
-        'table'    => 'TB_Room',
-        'pk'       => 'idRoom',
-        'fields'   => ['building' => 'Building', 'room_number' => 'RoomNumber', 'capacity' => 'Capacity'],
-        'deleted'  => 'IsDeleted',
+        'table'    => 'room',
+        'pk'       => 'id',
+        'fields'   => ['building' => 'building', 'room_number' => 'room_number', 'capacity' => 'capacity'],
+        'deleted'  => 'is_deleted',
         'required' => ['building', 'room_number'],
-        'unique'   => ['RoomNumber'],
-        'order'    => 'Building, RoomNumber',
+        'unique'   => ['room_number'],
+        'order'    => 'building, room_number',
         'label'    => 'аудитория',
       ],
       'lesson_types' => [
-        'table'    => 'TB_TimeType',
-        'pk'       => 'idTimeType',
-        'fields'   => ['name' => 'TimeTypeName', 'short_name' => 'TimeTypeShortName'],
-        'deleted'  => null,
+        'table'    => 'lesson_type',
+        'pk'       => 'id',
+        'fields'   => ['name' => 'name', 'short_name' => 'short_name'],
+        'deleted'  => 'is_deleted',
         'required' => ['name'],
-        'unique'   => ['TimeTypeName'],
-        'order'    => 'TimeTypeName',
+        'unique'   => ['name'],
+        'order'    => 'name',
         'label'    => 'тип занятия',
       ],
       'weeks' => [
-        'table'    => 'TB_Weeks',
-        'pk'       => 'idWeek',
-        'fields'   => ['name' => 'WeekName', 'start_date' => 'StartDate', 'end_date' => 'EndDate'],
-        'deleted'  => 'IsDeleted',
+        'table'    => 'week',
+        'pk'       => 'id',
+        'fields'   => ['name' => 'name', 'start_date' => 'start_date', 'end_date' => 'end_date'],
+        'deleted'  => 'is_deleted',
         'required' => ['name', 'start_date', 'end_date'],
         'unique'   => [],
-        'order'    => 'StartDate DESC',
+        'order'    => 'start_date DESC',
         'label'    => 'учебная неделя',
       ],
     ];
@@ -201,12 +181,8 @@ if (!function_exists('crudConfig')) {
           }
           if ($cfg['deleted']) { $cols[] = $cfg['deleted']; $marks[] = '0'; }
 
-          $newId = crudNextId($conn, $cfg['table'], $cfg['pk']);
-          array_unshift($cols, $cfg['pk']);
-          array_unshift($marks, '?');
-          array_unshift($params, $newId);
-
-          dbInsert($conn, "INSERT INTO {$cfg['table']} (" . implode(',', $cols) . ") VALUES (" . implode(',', $marks) . ")", $params);
+          // id формируется автоматически (AUTO_INCREMENT)
+          $newId = dbInsert($conn, "INSERT INTO {$cfg['table']} (" . implode(',', $cols) . ") VALUES (" . implode(',', $marks) . ")", $params);
           sendJson(['success' => true, 'id' => $newId], 201);
         }
 

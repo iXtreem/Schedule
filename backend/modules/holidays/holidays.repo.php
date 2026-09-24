@@ -1,28 +1,33 @@
+
 <?php
 require_once __DIR__ . '/../../lib/db.php';
 
+// Праздничные дни (таблица holiday — новая схема, бывшая TB_Holidays)
+
+// Добавить праздник (если даты ещё нет)
 function repoAddHoliday($conn, $date) {
-  // вставляем только если такой даты ещё нет
   dbExec(
     $conn,
-    "INSERT INTO TB_Holidays (HolidayDate)
+    "INSERT INTO holiday (holiday_date)
      SELECT ? FROM DUAL
-     WHERE NOT EXISTS (SELECT 1 FROM TB_Holidays WHERE HolidayDate = ?)",
+     WHERE NOT EXISTS (SELECT 1 FROM holiday WHERE holiday_date = ?)",
     [$date, $date]
   );
 }
 
+// Удалить праздник по дате
 function repoRemoveHoliday($conn, $date) {
-  dbExec($conn, "DELETE FROM TB_Holidays WHERE HolidayDate = ?", [$date]);
+  dbExec($conn, "DELETE FROM holiday WHERE holiday_date = ?", [$date]);
 }
 
+// Список праздников в диапазоне дат (для подсветки коротких пар)
 function repoGetHolidaysRange($conn, $start, $end) {
   $rows = dbAll(
     $conn,
-    "SELECT DATE_FORMAT(HolidayDate, '%Y-%m-%d') AS date
-     FROM TB_Holidays
-     WHERE HolidayDate >= ? AND HolidayDate <= ?
-     ORDER BY HolidayDate",
+    "SELECT DATE_FORMAT(holiday_date, '%Y-%m-%d') AS date
+     FROM holiday
+     WHERE holiday_date >= ? AND holiday_date <= ?
+     ORDER BY holiday_date",
     [$start, $end]
   );
 

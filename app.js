@@ -304,6 +304,19 @@ async function init() {
     }
   });
 
+  // Вкладка «Выходные дни» меняет праздники через календарь — обновляем таблицу расписания.
+  window.addEventListener("holidays-changed", async () => {
+    try {
+      const wk = state.weeks.find(
+        (w) => Number(w.id) === Number(state.currentWeekId)
+      );
+      if (wk) state.holidays = await api.holidaysRange(wk.start_date, wk.end_date);
+      renderActiveTable();
+    } catch (err) {
+      console.error("Не удалось обновить праздники:", err);
+    }
+  });
+
   state.selectedGroupIds = state.groups.map((g) => Number(g.id));
 
   renderWeekSelect();
@@ -555,43 +568,10 @@ function bindEvents() {
     await openModal({ groupId, dayIndex, pairIndex, lessonId });
   });
 
-  scheduleTable.addEventListener("change", async (e) => {
-    if (state.scheduleView !== "groups") return;
-
-    const ch = e.target.closest(".holiday-toggle");
-    if (!ch) return;
-
-    const dayCell = ch.closest(".day-cell");
-    const dateStr = dayCell?.dataset?.date;
-    if (!dateStr) return;
-
-    //запрет воскресенья: 0 = Sunday
-    const day = new Date(dateStr).getDay();
-    if (day === 0) {
-      alert("Воскресенье нельзя делать праздником (это отдельный тип дня).");
-      ch.checked = false;
-      return;
-    }
-
-    const checked = ch.checked;
-
-    try {
-      if (checked) await api.addHoliday(dateStr);
-      else await api.removeHoliday(dateStr);
-
-      const wk = state.weeks.find(
-        (w) => Number(w.id) === Number(state.currentWeekId),
-      );
-      if (wk)
-        state.holidays = await api.holidaysRange(wk.start_date, wk.end_date);
-
-      renderActiveTable();
-    } catch (err) {
-      console.error(err);
-      alert("Ошибка изменения праздника");
-      ch.checked = !checked;
-    }
-  });
+  // Обработчик тумблеров «Праздник» в таблице удалён:
+  // выходные дни теперь отмечаются кликом по календарю
+  // в окне «Справочники» → вкладка «Выходные дни» (см. js/modules/modals/daysOffCalendar.js).
+  // Обновление таблицы происходит через событие "holidays-changed".
 
   if (modalClose) modalClose.addEventListener("click", closeModal);
   if (saveLessonBtn) saveLessonBtn.addEventListener("click", saveLesson);

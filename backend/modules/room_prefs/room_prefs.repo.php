@@ -1,21 +1,25 @@
+
 <?php
 require_once __DIR__ . '/../../lib/db.php';
 
-// Создаёт таблицу предпочтений аудиторий, если её ещё нет (MySQL-диалект)
+// Создаёт таблицу предпочтений аудиторий, если её ещё нет (новая схема: room_preference)
 function repoEnsureRoomPrefsTable($conn) {
   static $checked = false;
   if ($checked) return;
 
   $conn->query("
-    CREATE TABLE IF NOT EXISTS TB_RoomPref (
-      idRoomPref INT NOT NULL AUTO_INCREMENT PRIMARY KEY,
-      idDiscipl  INT NOT NULL,
-      idRoom     INT NOT NULL,
-      Priority   INT NOT NULL DEFAULT 100,
-      IsPrimary  TINYINT(1) NOT NULL DEFAULT 0,
-      IsDeleted  TINYINT(1) NOT NULL DEFAULT 0,
-      CreatedAt  DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
-      UpdatedAt  DATETIME NULL
+    CREATE TABLE IF NOT EXISTS room_preference (
+      id            INT NOT NULL AUTO_INCREMENT PRIMARY KEY,
+      discipline_id INT NOT NULL,
+      room_id       INT NOT NULL,
+      priority      INT NOT NULL DEFAULT 100,
+      is_primary    TINYINT(1) NOT NULL DEFAULT 0,
+      is_deleted    TINYINT(1) NOT NULL DEFAULT 0,
+      created_at    DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      updated_at    DATETIME NULL,
+      KEY idx_pref_disc (discipline_id),
+      CONSTRAINT fk_pref_disc FOREIGN KEY (discipline_id) REFERENCES discipline (id),
+      CONSTRAINT fk_pref_room FOREIGN KEY (room_id)       REFERENCES room (id)
     ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
   ");
 
@@ -71,53 +75,57 @@ function repoNormalizeRoomPrefs(array $prefs): array {
   return $out;
 }
 
+// Базовый SELECT списка предпочтений (используется в нескольких запросах)
 function roomPrefsSelectSql() {
   return "
     SELECT
-      rp.idRoomPref AS id,
-      rp.idDiscipl AS subject_id,
-      rp.idRoom AS room_id,
-      CONCAT(TRIM(r.Building), '-', TRIM(r.RoomNumber)) AS room_name,
-      CAST(rp.Priority AS SIGNED) AS priority,
-      CAST(rp.IsPrimary AS SIGNED) AS is_primary
-    FROM TB_RoomPref rp
-    JOIN TB_Room r ON r.idRoom = rp.idRoom AND r.IsDeleted = 0
+      rp.id,
+      rp.discipline_id AS subject_id,
+      rp.room_id,
+      CONCAT(TRIM(r.building), '-', TRIM(r.room_number)) AS room_name,
+      CAST(rp.priority AS SIGNED) AS priority,
+      CAST(rp.is_primary AS SIGNED) AS is_primary
+    FROM room_preference rp
+    JOIN room r ON r.id = rp.room_id AND r.is_deleted = 0
   ";
 }
 
+// Предпочтения аудиторий одной дисциплины
 function repoGetRoomPrefsBySubject($conn, $subjectId) {
   repoEnsureRoomPrefsTable($conn);
 
   return dbAll(
     $conn,
     roomPrefsSelectSql() . "
-    WHERE rp.IsDeleted = 0
-      AND rp.idDiscipl = ?
-    ORDER BY rp.IsPrimary DESC, rp.Priority ASC, r.Building, r.RoomNumber",
+    WHERE rp.is_deleted = 0
+      AND rp.discipline_id = ?
+    ORDER BY rp.is_primary DESC, rp.priority ASC, r.building, r.room_number",
     [(int)$subjectId]
   );
 }
 
+// Все предпочтения (для сводной модалки настроек)
 function repoGetRoomPrefsAll($conn) {
   repoEnsureRoomPrefsTable($conn);
 
   return dbAll(
     $conn,
     "SELECT
-        rp.idDiscipl AS subject_id,
-        d.DisciplName AS subject_name,
-        rp.idRoom AS room_id,
-        CONCAT(TRIM(r.Building), '-', TRIM(r.RoomNumber)) AS room_name,
-        CAST(rp.Priority AS SIGNED) AS priority,
-        CAST(rp.IsPrimary AS SIGNED) AS is_primary
-     FROM TB_RoomPref rp
-     JOIN TB_Discipl d ON d.idDiscipl = rp.idDiscipl AND d.DisciplDeleted = 0
-     JOIN TB_Room r ON r.idRoom = rp.idRoom AND r.IsDeleted = 0
-     WHERE rp.IsDeleted = 0
-     ORDER BY d.DisciplName, rp.IsPrimary DESC, rp.Priority ASC, r.Building, r.RoomNumber"
+        rp.discipline_id AS subject_id,
+        d.name AS subject_name,
+        rp.room_id,
+        CONCAT(TRIM(r.building), '-', TRIM(r.room_number)) AS room_name,
+        CAST(rp.priority AS SIGNED) AS priority,
+        CAST(rp.is_primary AS SIGNED) AS is_primary
+     FROM room_preference rp
+     JOIN discipline d ON d.id = rp.discipline_id AND d.is_deleted = 0
+     JOIN room r ON r.id = rp.room_id AND r.is_deleted = 0
+     WHERE rp.is_deleted = 0
+     ORDER BY d.name, rp.is_primary DESC, rp.priority ASC, r.building, r.room_number"
   );
 }
 
+// Полная перезапись предпочтений дисциплины (в транзакции: старые -> удалены, новые вставлены)
 function repoSaveRoomPrefs($conn, $subjectId, array $prefs) {
   repoEnsureRoomPrefsTable($conn);
   $subjectId = (int)$subjectId;
@@ -129,15 +137,15 @@ function repoSaveRoomPrefs($conn, $subjectId, array $prefs) {
   try {
     dbExec(
       $conn,
-      "UPDATE TB_RoomPref SET IsDeleted = 1, UpdatedAt = NOW()
-       WHERE idDiscipl = ? AND IsDeleted = 0",
+      "UPDATE room_preference SET is_deleted = 1, updated_at = NOW()
+       WHERE discipline_id = ? AND is_deleted = 0",
       [$subjectId]
     );
 
     foreach ($normalized as $row) {
       dbInsert(
         $conn,
-        "INSERT INTO TB_RoomPref (idDiscipl, idRoom, Priority, IsPrimary, IsDeleted)
+        "INSERT INTO room_preference (discipline_id, room_id, priority, is_primary, is_deleted)
          VALUES (?, ?, ?, ?, 0)",
         [$subjectId, (int)$row['room_id'], (int)$row['priority'], (int)$row['is_primary']]
       );

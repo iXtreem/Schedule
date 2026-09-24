@@ -1,3 +1,4 @@
+
 * {
   box-sizing: border-box;
 }
@@ -211,27 +212,63 @@ body {
   vertical-align: top;
 }
 
+/* Глобальная страховка от проблемы «шапка таблицы перекрывает модалку».
+   Любая ячейка <th>, у которой остался position:sticky из старой вёрстки,
+   создаёт новый stacking-контекст и может рисоваться ПОВЕРХ модального окна
+   (у которого z-index выше только на уровне document). Чтобы это исключить,
+   явно обнуляем z-index у всех th внутри таблиц — порядок наложения будет
+   определяться только z-index'ом самого overlay (.modal-overlay). */
+.table th {
+  z-index: auto;
+}
+
 .table th {
   background: #f9fafb;
   text-align: left;
   position: sticky;
   top: 0;
-  /* z-index: 1; */
+  /* z-index убран специально: «прилипающая» шапка таблицы перекрывала
+     окно справочников. Окно модальных диалогов теперь всегда поверх
+     элементов страницы (см. .modal-overlay ниже) */
+}
+
+/* Фиксированные ширины столбцов таблицы расписания.
+   ВАЖНО: у первого столбца («День») ширина должна быть НЕ МЕНЬШИМ числом,
+   чем у остальных столбцов. Иначе браузер «отдаёт» всю leftover-ширину
+   первому столбцу и он выглядит растянутым (особенно когда групп мало).
+   Поэтому col-day и col-num/col-time/col-room/col-lesson имеют одинаковую
+   ширину — все столбцы визуально равные. */
+table#scheduleTable {
+  table-layout: fixed;
+}
+
+table#scheduleTable col.col-day    { width: 150px; min-width: 150px; }
+table#scheduleTable col.col-num    { width: 150px; min-width: 150px; }
+table#scheduleTable col.col-time   { width: 150px; min-width: 150px; }
+table#scheduleTable col.col-lesson { width: 150px; min-width: 150px; }
+table#scheduleTable col.col-room   { width: 150px; min-width: 150px; }
+
+/* Ячейки таблицы расписания не должны «раздувать» колонку:
+   переносим длинные слова и обрезаем по необходимости */
+table#scheduleTable th,
+table#scheduleTable td {
+  overflow-wrap: break-word;
+  word-break: break-word;
 }
 
 .day-cell {
   background: #fcfcff;
-  width: 170px;
+  overflow-wrap: break-word;
 }
 
 .time-cell {
-  width: 140px;
+  width: 130px;
   white-space: nowrap;
 }
 
 .clickable {
   cursor: pointer;
-  min-width: 300px;
+  overflow-wrap: break-word;
 }
 .muted {
   color: #6b7280;
@@ -255,6 +292,21 @@ body {
   align-items: center;
   justify-content: center;
   padding: 16px;
+  /* Высокий слой: окно справочников обязано перекрывать
+     чекбоксы, кнопки и ячейки таблицы основного расписания */
+  z-index: 1000;
+}
+
+/* Принудительно поднимаем модалку над «прилипающими» элементами страницы
+   (sticky-шапки таблиц, кастомные контролы). Без этого некоторые элементы
+   основного UI могут отрисовываться поверх окна справочников из-за того,
+   что создают собственный stacking-контекст. */
+#dictModalOverlay,
+#modalOverlay,
+#weekModalOverlay,
+#exportBuilderOverlay,
+#roomPrefsModalOverlay {
+  isolation: isolate;
 }
 
 .modal {
@@ -909,7 +961,6 @@ body {
 }
 
 .dict-tab {
-  border: 1px solid #d7dbе3;
   border: 1px solid #d7dbe3;
   background: #f4f6fa;
   color: #333;
@@ -997,4 +1048,204 @@ body {
 
 .dict-table-bell thead th {
   text-align: left;
+}
+/* ---------- Вкладка «Выходные дни»: календарь в окне справочников ---------- */
+
+.cal-toolbar {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 8px;
+}
+
+.cal-title {
+  font-weight: 600;
+  min-width: 140px;
+  text-align: center;
+}
+
+.cal-legend {
+  margin-left: auto;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  color: #666;
+  font-size: 12px;
+}
+
+.cal-dot {
+  display: inline-block;
+  width: 12px;
+  height: 12px;
+  border-radius: 3px;
+}
+
+.cal-dot-off {
+  background: #e53935; /* красный = выходной день */
+}
+
+.cal-table {
+  width: 100%;
+  border-collapse: collapse;
+  table-layout: fixed;
+}
+
+.cal-table th {
+  padding: 4px;
+  font-size: 12px;
+  color: #666;
+  border-bottom: 1px solid #ddd;
+}
+
+.cal-table td {
+  border: 1px solid #e3e3e3;
+  text-align: center;
+  padding: 8px 4px;
+  cursor: default;
+  user-select: none;
+}
+
+.cal-day {
+  cursor: pointer;
+}
+
+.cal-day:hover {
+  background: #eef3ff;
+}
+
+/* Отмеченный (красный) день — повторный клик снимает класс */
+.cal-day-off,
+.cal-day-off:hover {
+  background: #e53935;
+  color: #fff;
+  font-weight: 600;
+}
+
+.cal-day-today {
+  outline: 2px solid #1a73e8;
+  outline-offset: -2px;
+}
+
+.cal-empty {
+  background: #fafafa;
+}
+
+/* ---------- Вкладка «Время пар»: редактор начала пар и перемен ---------- */
+
+/* Блок одного типа дней (рабочие / праздничные) */
+.lt-block {
+  margin-bottom: 18px;
+  padding: 10px 12px;
+  border: 1px solid #e5e7eb;
+  border-radius: 10px;
+  background: #fff;
+}
+
+.lt-block-title {
+  font-weight: 600;
+  margin-bottom: 8px;
+}
+
+/* Верхние быстрые настройки: начало первой пары + общая длительность */
+.lt-settings {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 16px;
+  margin-bottom: 10px;
+  padding-bottom: 8px;
+  border-bottom: 1px dashed #e5e7eb;
+}
+
+.lt-field {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 13px;
+  color: #444;
+}
+
+.lt-time {
+  width: 110px;
+}
+
+.lt-num-inp {
+  width: 70px;
+  display: inline-block;
+}
+
+/* Цепочка пар, читаемая сверху вниз */
+.lt-chain {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.lt-lesson {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 10px;
+  padding: 6px 8px;
+  border-radius: 8px;
+  background: #f9fafb;
+}
+
+.lt-lesson-num {
+  min-width: 60px;
+  font-weight: 600;
+}
+
+.lt-dash {
+  color: #9ca3af;
+}
+
+.lt-lesson-end {
+  font-variant-numeric: tabular-nums;
+  font-weight: 600;
+  min-width: 48px;
+}
+
+/* Длительность пары с кнопками ➖/➕ (шаг 5 минут) */
+.lt-dur {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.lt-dur-val {
+  min-width: 58px;
+  text-align: center;
+  font-size: 13px;
+  color: #333;
+}
+
+.lt-dur .icon-btn,
+.lt-lesson .icon-btn {
+  width: 28px;
+  height: 28px;
+  font-size: 13px;
+}
+
+/* Строка-перемена между парами */
+.lt-break {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 2px 8px;
+  color: #6b7280;
+  font-size: 13px;
+}
+
+.lt-break-line {
+  flex: 1;
+  border-top: 1px dashed #d1d5db;
+}
+
+.lt-add {
+  margin-top: 8px;
+}
+
+.lt-hint {
+  font-size: 12px;
+  margin-top: 6px;
 }
