@@ -1,13 +1,39 @@
 
 import { state } from "../../../app.js";
 import { getBellSchedules } from "../modals/bellStore.js";
+import { normalizeBellText } from "./bellUtils.js"; // ← новая зависимость
 export function formatDateForInput(date) {
   const yyyy = date.getFullYear();
   const mm = String(date.getMonth() + 1).padStart(2, "0");
   const dd = String(date.getDate()).padStart(2, "0");
   return `${yyyy}-${mm}-${dd}`;
 }
+export function getTimeSlots(dayType) {
+  const bells = getBellSchedules();
+  const slots = bells[dayType] || bells.workday || {};
+  // Единый стиль отображения: даже если в базе остались старые строки
+  // выходных вида «8:00-9:00» (без перемены), приводим их к виду
+  // рабочих дней — «8:00-8:30<br>8:30-9:00».
+  const out = {};
+  for (const key of Object.keys(slots)) {
+    out[key] = normalizeBellText(slots[key]);
+  }
+  return out;
+}
 
+// Число пар определяется настройками «Время пар»: не жёсткие 7/10,
+// а реально заданное количество заполненных слотов.
+// Раньше для выходных стояла нижняя граница 10 — из-за этого даже когда
+// выходные были настроены как рабочие (8:00-8:45<br>8:50-9:30), таблица
+// дорисовывала пустые строки. Теперь все типы дней считаются одинаково.
+export function getMaxPairs(dayType, timeSlots) {
+  const slots = timeSlots || getTimeSlots(dayType);
+  const nums = Object.keys(slots)
+    .map(Number)
+    .filter((n) => Number.isFinite(n) && n >= 1 && slots[n]);
+  // хотя бы одна строка на день всегда должна быть
+  return Math.max(1, ...nums);
+}
 export function formatDateForDisplay(date) {
   const dd = String(date.getDate()).padStart(2, "0");
   const mm = String(date.getMonth() + 1).padStart(2, "0");
@@ -21,29 +47,19 @@ export function getDayType(date) {
   if (date.getDay() === 0) return "sunday";
   return "workday";
 }
-
-export function getTimeSlots(dayType) {
-  const bells = getBellSchedules();
-  return bells[dayType] || bells.workday || {};
-}
-
-// Число пар определяется настройками «Время пар»: не жёсткие 7/10,
-// а реально заданное количество слотов (но не меньше дефолтных границ).
-export function getMaxPairs(dayType, timeSlots) {
-  const slots = timeSlots || getTimeSlots(dayType);
-  const nums = Object.keys(slots)
-    .map(Number)
-    .filter((n) => Number.isFinite(n) && n >= 1 && slots[n]);
-  const hardMin = dayType === "holiday" ? 10 : 7;
-  return Math.max(hardMin, ...nums, 1);
-}
-
 export function findLesson(weekId, groupId, dayOfWeek, timeSlot) {
-  return state.lessons.find(
-    (l) =>
+return state.lessons.find(
+
+   (l) =>
+
       l.weekId === weekId &&
-      l.groupId === groupId &&
-      l.dayOfWeek === dayOfWeek &&
-      l.timeSlot === timeSlot,
-  );
+
+   	      l.groupId === groupId &&
+
+        l.dayOfWeek === dayOfWeek &&
+
+          l.timeSlot === timeSlot,
+
+);
+
 }
