@@ -22,7 +22,6 @@ let isBound = false;
 let activeTab = "groups";
 let editingId = null; // id редактируемой записи (null = создание новой)
 let rowsCache = []; // текущий список записей активной вкладки
-let bellData = null; // справочник времени пар { workday: {1: "...", ...}, ... }
 
 // ---- Описание вкладок и полей форм (ключи JSON совпадают с backend/lib/crud.php) ----
 const TABS = [
@@ -112,14 +111,8 @@ const TABS = [
 
 // Вкладка «Выходные дни» — календарь, отрисовываемый модулем daysOffCalendar.js
 const DAYSOFF_TAB = { key: "daysoff", title: "Выходные дни" };
-// Новая вкладка «Время пар» (после «Выходные дни») — рендерится модулем lessonTimes.js
+// Вкладка «Время пар» (после «Выходные дни») — рендерится модулем lessonTimes.js
 const LESSON_TIMES_TAB = { key: "lesson_times", title: "Время пар" };
-// Старая вкладка со строками «9:00-9:45» переименована, чтобы не было двух «Время пар»
-const BELL_TAB = { key: "bell", title: "Звонки" };
-const BELL_TYPES = [
-  { key: "workday", title: "Рабочие дни", maxSlots: 10 },
-  { key: "holiday", title: "Праздничные / сокращённые", maxSlots: 10 },
-];
 
 function tabByKey(key) {
   return TABS.find((t) => t.key === key) || null;
@@ -136,7 +129,7 @@ function escapeHtml(value) {
 
 function renderTabs() {
   if (!tabsWrap) return;
-  const all = [...TABS, DAYSOFF_TAB, LESSON_TIMES_TAB, BELL_TAB];
+  const all = [...TABS, DAYSOFF_TAB, LESSON_TIMES_TAB];
   tabsWrap.innerHTML = all
     .map(
       (t) =>
@@ -244,78 +237,11 @@ async function loadRows(showError = true) {
   renderRows(searchInput?.value || "");
 }
 
-// ---------- Вкладка «Время пар» ----------
-
-function renderBellTable() {
-  if (!tableEl) return;
-  if (!bellData) {
-    tableEl.innerHTML = `<thead><tr><th class="muted">Загрузка…</th></tr></thead>`;
-    return;
-  }
-  tableEl.innerHTML = BELL_TYPES.map((bt) => {
-    const slots = bellData[bt.key] || {};
-    const nums = [...new Set([...Object.keys(slots).map(Number), ...Array.from({ length: bt.maxSlots }, (_, i) => i + 1)])]
-      .filter((n) => n >= 1 && n <= bt.maxSlots)
-      .sort((a, b) => a - b);
-    const rows = nums
-      .map(
-        (n) => `<tr>
-          <td style="width:70px">${n} пара</td>
-          <td><input class="select dict-input" data-bell-type="${bt.key}" data-bell-slot="${n}"
-               value="${escapeHtml(slots[n] ?? "")}" placeholder="9:00-9:45<br>9:50-10:30" /></td>
-          <td class="dict-actions">
-            <button type="button" class="icon-btn" data-bell-reset="${bt.key}:${n}" title="Вернуть значение по умолчанию">↩️</button>
-          </td>
-        </tr>`
-      )
-      .join("");
-    return `<thead><tr><th colspan="3">${bt.title}</th></tr></thead><tbody>${rows}</tbody>`;
-  }).join("");
-}
-
-async function loadBell() {
-  try {
-    bellData = await api.bellSchedule();
-  } catch (e) {
-    bellData = null;
-    alert(`Не удалось загрузить расписание звонков: ${e.message || e}`);
-  }
-  renderBellTable();
-}
-
-async function saveBell() {
-  const payload = {};
-  tableEl.querySelectorAll("input[data-bell-type]").forEach((inp) => {
-    const type = inp.dataset.bellType;
-    const slot = Number(inp.dataset.bellSlot);
-    (payload[type] ||= {})[slot] = inp.value;
-  });
-  try {
-    const res = await api.saveBellSchedule(payload);
-    bellData = res?.data || bellData;
-    renderBellTable();
-    alert("Время пар сохранено.");
-  } catch (e) {
-    alert(`Не удалось сохранить время пар: ${e.message || e}`);
-  }
-}
-
 // ---------- Переключение вкладок ----------
 
 function switchTab(key) {
   activeTab = key;
   renderTabs();
-  if (key === BELL_TAB.key) {
-    hideDaysOffCalendar(); // уходим с календаря, если были на нём
-    if (formWrap) formWrap.innerHTML = "";
-    if (editHint) editHint.classList.add("hidden");
-    if (cancelEditBtn) cancelEditBtn.classList.add("hidden");
-    if (searchInput) searchInput.classList.add("hidden");
-    if (saveBtn) saveBtn.textContent = "Сохранить время пар";
-    tableEl?.classList.add("dict-table-bell");
-    loadBell();
-    return;
-  }
   // Вкладка «Выходные дни»: вместо таблицы — календарь из отдельного модуля
   if (key === DAYSOFF_TAB.key) {
     if (formWrap) formWrap.innerHTML = "";
@@ -323,7 +249,6 @@ function switchTab(key) {
     if (cancelEditBtn) cancelEditBtn.classList.add("hidden");
     if (searchInput) searchInput.classList.add("hidden");
     if (saveBtn) saveBtn.classList.add("hidden"); // день сохраняется по клику
-    tableEl?.classList.remove("dict-table-bell");
     hideLessonTimes(); // уходим с «Времени пар», если были на нём
     showDaysOffCalendar(tableEl);
     return;
@@ -339,7 +264,6 @@ function switchTab(key) {
       saveBtn.classList.remove("hidden");
       saveBtn.textContent = "Сохранить время пар";
     }
-    tableEl?.classList.remove("dict-table-bell");
     showLessonTimes(tableEl);
     return;
   }
@@ -348,7 +272,6 @@ function switchTab(key) {
   editingId = null;
   hideDaysOffCalendar();
   hideLessonTimes();
-  tableEl?.classList.remove("dict-table-bell");
   if (searchInput) searchInput.classList.remove("hidden");
   if (saveBtn) saveBtn.classList.remove("hidden");
   renderForm(tab);
@@ -367,8 +290,7 @@ function collectForm(tab) {
 }
 
 async function saveCurrent() {
-  if (activeTab === BELL_TAB.key) return saveBell();
-  // Новая вкладка «Время пар»: сохранение через модуль lessonTimes.js
+  // Вкладка «Время пар»: сохранение через модуль lessonTimes.js
   if (activeTab === LESSON_TIMES_TAB.key) {
     const ok = await saveLessonTimes();
     if (ok) {
@@ -477,13 +399,6 @@ export function initDictModal() {
   searchInput?.addEventListener("input", () => renderRows(searchInput.value));
 
   tableEl?.addEventListener("click", (e) => {
-    const reset = e.target.closest("[data-bell-reset]");
-    if (reset) {
-      const [type, slot] = reset.dataset.bellReset.split(":");
-      const inp = tableEl.querySelector(`input[data-bell-type="${type}"][data-bell-slot="${slot}"]`);
-      if (inp) inp.value = "";
-      return;
-    }
     const actionBtn = e.target.closest("[data-action]");
     const tr = e.target.closest("tr[data-id]");
     if (!tr) return;
