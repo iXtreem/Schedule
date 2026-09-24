@@ -25,3 +25,50 @@ function repoAddWeek($conn, $name, $start, $end) {
     [$name, $start, $end]
   );
 }
+
+// ---- Автосоздание недель на основе выходных --------------------------------
+
+// Все даты выходных (праздников) из таблицы holiday.
+// Используем при генерации недель: день, объявленный выходным,
+// не является учебным и «разрывает» непрерывную учебную неделю.
+function repoGetAllHolidayDates($conn) {
+  $rows = dbAll($conn, "SELECT DATE_FORMAT(holiday_date, '%Y-%m-%d') AS d FROM holiday");
+  $set = [];
+  foreach ($rows as $row) $set[$row['d']] = true;
+  return $set; // ассоциативный массив дата => true для быстрой проверки
+}
+
+// Дата начала следующей недели после указанной (по существующим неделям в БД).
+function repoMaxWeekEndDate($conn) {
+  return dbScalar($conn, "SELECT MAX(end_date) FROM week WHERE is_deleted = 0");
+}
+
+// Проверка: есть ли уже неделя с таким понедельником (защита от дублей).
+function repoWeekExistsByStart($conn, $startDate) {
+  $n = dbScalar(
+    $conn,
+    "SELECT COUNT(*) FROM week WHERE start_date = ? AND is_deleted = 0",
+    [$startDate],
+    0
+  );
+  return (int)$n > 0;
+}
+
+// Обновить границы существующей недели (например, после добавления выходных
+// неделя могла «оборваться» раньше — подтягиваем end_date к актуальному).
+function repoUpdateWeekRange($conn, $id, $name, $start, $end) {
+  return dbExec(
+    $conn,
+    "UPDATE week SET name = ?, start_date = ?, end_date = ? WHERE id = ?",
+    [$name, $start, $end, $id]
+  );
+}
+
+// Вставка недели без флага удаления (для пакетной генерации).
+function repoInsertWeekRaw($conn, $name, $start, $end) {
+  return dbInsert(
+    $conn,
+    "INSERT INTO week (name, start_date, end_date, is_deleted) VALUES (?, ?, ?, 0)",
+    [$name, $start, $end]
+  );
+}

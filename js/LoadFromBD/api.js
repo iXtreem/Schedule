@@ -98,6 +98,16 @@ export const api = {
       throwOnError: true,
     }),
 
+  // Автосоздание недель семестра в одну кнопку (с учётом выходных/праздников).
+  // payload: { start_date: "YYYY-MM-DD", end_date: "YYYY-MM-DD" }
+  generateWeeks: (payload) =>
+    requestJson(`${API}?entity=weeks_generate`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(payload),
+      throwOnError: true,
+    }),
+
   updateLesson: (id, payload) =>
     requestJson(`${API}?entity=schedule_lessons&id=${id}`, {
       method: "PUT",
@@ -164,13 +174,11 @@ export const api = {
       }),
       throwOnError: true,
     }),
-  // Отметить день в календаре «Выходные дни».
-  // kind: "off" — красный (полный выходной), "reduced" — жёлтый (сокращённые пары).
-  addHoliday: (dateStr, kind = "off") =>
+  addHoliday: (dateStr) =>
     requestJson(`${API}?entity=holiday`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ date: dateStr, kind }),
+      body: JSON.stringify({ date: dateStr }),
       throwOnError: true,
     }),
 

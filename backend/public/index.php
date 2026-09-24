@@ -1,3 +1,4 @@
+
 <?php
 require_once __DIR__ . '/../config/session.php';
 require_once __DIR__ . '/../config/headers.php';
@@ -47,6 +48,12 @@ try {
     case 'weeks':
       require_once __DIR__ . '/../modules/weeks/weeks.controller.php';
       weeksController($conn, $method);
+      break;
+
+    // Автосоздание недель семестра в одну кнопку (с учётом выходных)
+    case 'weeks_generate':
+      require_once __DIR__ . '/../modules/weeks/weeks.controller.php';
+      weeksGenerateController($conn, $method);
       break;
 
     case 'holiday':

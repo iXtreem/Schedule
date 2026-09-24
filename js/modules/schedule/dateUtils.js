@@ -42,35 +42,20 @@ export function formatDateForDisplay(date) {
   return `${dd}.${mm}.${yyyy}`;
 }
 
-// Тип дня для выбора расписания звонков:
-//   "holiday" — жёлтый день из календаря «Выходные дни» (сокращённые пары);
-//   "sunday"  — воскресенье;
-//   "workday" — обычный рабочий день.
-// Красные (полные выходные) дни в таблицу не попадают вообще (см. isFullOffDay),
-// поэтому отдельного типа для них не нужно.
 export function getDayType(date) {
   const dateStr = formatDateForInput(date);
-  if (isReducedDay(dateStr)) return "holiday";
+  // ВАЖНО: state.holidays должен ВСЕГДА быть массивом строк 'YYYY-MM-DD'
+  // (список праздников недели, грузится из БД через api.holidaysRange).
+  // Если бэкенд вернул вместо массива объект или null, .includes() упал бы с
+  // TypeError («Cannot read properties of undefined (reading '2026-10-02')»).
+  // Поэтому нормализуем значение к массиву прямо здесь — таблица отрисзуется
+  // корректно даже при «битом» ответе сервера.
+  const holidays = Array.isArray(state.holidays)
+    ? state.holidays
+    : [];
+  if (holidays.includes(dateStr)) return "holiday";
   if (date.getDay() === 0) return "sunday";
   return "workday";
-}
-
-// ---- Отметки из календаря «Выходные дни» (state.dayMarks) ----
-// kind: "off" (красный — полный выходной) | "reduced" (жёлтый — сокращённый).
-
-// Полностью выходной день? Такие дни НЕ отображаются в таблицах расписания.
-export function isFullOffDay(dateOrStr) {
-  const dateStr =
-    typeof dateOrStr === "string" ? dateOrStr : formatDateForInput(dateOrStr);
-  return state.dayMarks[dateStr] === "off";
-}
-
-// Сокращённый (жёлтый) день? В таблицах остаётся, но время пар меняется
-// на «праздничное» (тип звонков holiday).
-export function isReducedDay(dateOrStr) {
-  const dateStr =
-    typeof dateOrStr === "string" ? dateOrStr : formatDateForInput(dateOrStr);
-  return state.dayMarks[dateStr] === "reduced";
 }
 export function findLesson(weekId, groupId, dayOfWeek, timeSlot) {
 return state.lessons.find(

@@ -1,9 +1,8 @@
 
+
 // Модуль вкладки «Выходные дни» окна «Справочники».
-// Показывает календарь на месяц. Клик по дню переключает состояние по циклу:
-//   обычный -> жёлтый (сокращённый день: пары идут по «праздничному» времени)
-//   жёлтый  -> красный (полный выходной: день убирается из таблиц расписания)
-//   красный -> обычный (отметка снимается).
+// Показывает календарь на месяц: клик по дню закрашивает его красным
+// (день становится выходным/праздником), повторный клик снимает подсветку.
 // Данные хранятся в той же таблице TB_Holidays, что и переключатель
 // «Праздник» у дня недели в таблице расписания (см. renderTable.js / app.js).
 import { api } from "../../LoadFromBD/api.js";
@@ -20,9 +19,7 @@ let bound = false;        // навешивали ли обработчики
 
 let viewYear = new Date().getFullYear();   // отображаемый год
 let viewMonth = new Date().getMonth();     // отображаемый месяц (0..11)
-// Отмеченные даты: { "YYYY-MM-DD": "reduced" | "off" }
-// reduced — жёлтый (сокращённые пары), off — красный (полный выходной).
-let dayMarks = {};
+let holidaysSet = new Set();               // выбранные даты в формате YYYY-MM-DD
 
 // ---- Служебные функции ----
 
@@ -41,20 +38,13 @@ function monthRange() {
   return { start: toDateStr(start), end: toDateStr(end) };
 }
 
-// Загрузка отмеченных дней за отображаемый месяц из базы данных.
-// Бэкенд возвращает список [{ date, kind }] либо (старая версия) список строк дат.
+// Загрузка выходных дней за отображаемый месяц из базы данных.
 async function loadHolidays() {
   const { start, end } = monthRange();
   try {
     const list = await api.holidaysRange(start, end);
-    dayMarks = {};
-    for (const item of list || []) {
-      if (typeof item === "string") {
-        dayMarks[item] = "off";            // обратная совместимость со старым форматом
-      } else if (item && item.date) {
-        dayMarks[item.date] = item.kind === "reduced" ? "reduced" : "off";
-      }
-    }
+    // защита от «битого» ответа: используем только массив строк-дат
+    holidaysSet = new Set(Array.isArray(list) ? list : []);
   } catch (e) {
     alert(`Не удалось загрузить выходные дни: ${e.message || e}`);
   }
@@ -83,10 +73,7 @@ function renderCalendar() {
       <button type="button" class="icon-btn" data-cal-nav="-1" title="Предыдущий месяц">◀</button>
       <span class="cal-title">${MONTH_NAMES[viewMonth]} ${viewYear}</span>
       <button type="button" class="icon-btn" data-cal-nav="1" title="Следующий месяц">▶</button>
-      <span class="cal-legend">
-        <span class="cal-dot cal-dot-reduced"></span> — сокращённый день (жёлтый)
-        &nbsp;<span class="cal-dot cal-dot-off"></span> — выходной (красный)
-      </span>
+      <span class="cal-legend"><span class="cal-dot cal-dot-off"></span> — выходной день</span>
     </div>
     <table class="cal-table"><thead><tr>`;
 
@@ -98,19 +85,13 @@ function renderCalendar() {
 
   for (let d = 1; d <= daysInMonth; d++) {
     const dateStr = toDateStr(new Date(viewYear, viewMonth, d));
-    const mark = dayMarks[dateStr];        // undefined | "reduced" | "off"
+    const isOff = holidaysSet.has(dateStr);
     const cls = [
       "cal-day",
-      mark === "reduced" ? "cal-day-reduced" : "",  // жёлтый = сокращённый день
-      mark === "off" ? "cal-day-off" : "",          // красный = полный выходной
+      isOff ? "cal-day-off" : "",   // красный = выходной
       dateStr === todayStr ? "cal-day-today" : "",
     ].filter(Boolean).join(" ");
-    const hint = mark === "off"
-      ? "Выходной — снимите отметку"
-      : mark === "reduced"
-        ? "Сокращённый день — кликните ещё раз, чтобы сделать выходным"
-        : "Нажмите: 1 клик — сокращённый (жёлтый), 2 клика — выходной (красный)";
-    html += `<td class="${cls}" data-date="${dateStr}" title="${hint}">${d}</td>`;
+    html += `<td class="${cls}" data-date="${dateStr}" title="Нажмите, чтобы отметить/снять выходной">${d}</td>`;
     if ((leading + d) % 7 === 0 && d !== daysInMonth) html += `</tr><tr>`;
   }
 
@@ -124,19 +105,17 @@ function renderCalendar() {
 
 // ---- Взаимодействие ----
 
-// Циклическое переключение состояния дня:
-//   обычный -> reduced (жёлтый) -> off (красный) -> обычный.
+// Переключение состояния дня: обычный <-> красный (выходной).
 // При клике сразу сохраняем/удаляем запись в базе, затем перерисовываем.
 async function toggleDay(dateStr) {
-  const current = dayMarks[dateStr];       // undefined | "reduced" | "off"
-  const next = !current ? "reduced" : current === "reduced" ? "off" : null;
+  const wasOff = holidaysSet.has(dateStr);
   try {
-    if (next === null) {
+    if (wasOff) {
       await api.removeHoliday(dateStr);
-      delete dayMarks[dateStr];
+      holidaysSet.delete(dateStr);
     } else {
-      await api.addHoliday(dateStr, next);
-      dayMarks[dateStr] = next;
+      await api.addHoliday(dateStr);
+      holidaysSet.add(dateStr);
     }
   } catch (e) {
     alert(`Не удалось изменить день ${dateStr}: ${e.message || e}`);

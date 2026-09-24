@@ -1,4 +1,5 @@
 
+
 <!doctype html>
 <html lang="ru">
   <head>
@@ -109,6 +110,14 @@
               <div class="week-controls">
                 <select id="weekSelect" class="select"></select>
                 <button id="addWeekBtn" class="btn btn-outline">＋</button>
+                <!-- Автосоздание недель семестра в одну кнопку -->
+                <button
+                  id="generateWeeksBtn"
+                  class="btn btn-outline"
+                  title="Автосоздать недели до конца семестра с учётом выходных"
+                >
+                  ⚡ Семестр
+                </button>
               </div>
             </div>
 
@@ -436,6 +445,49 @@
           <button id="saveWeekBtn" class="btn btn-primary">
             Сохранить неделю
           </button>
+        </div>
+      </div>
+    </div>
+
+    <!-- Модалка автосоздания недель семестра -->
+    <div id="genWeeksOverlay" class="modal-overlay hidden">
+      <div class="modal">
+        <div class="modal-header">
+          <h2 class="modal-title">Автосоздание недель семестра</h2>
+          <button id="genWeeksClose" class="icon-btn" aria-label="Закрыть">
+            ✕
+          </button>
+        </div>
+
+        <div class="modal-body">
+          <div class="form-grid">
+            <div class="field">
+              <label class="label" for="genSemesterStart">Начало семестра *</label>
+              <input id="genSemesterStart" type="date" class="select" />
+            </div>
+
+            <div class="field">
+              <label class="label" for="genSemesterEnd">Конец семестра *</label>
+              <input id="genSemesterEnd" type="date" class="select" />
+            </div>
+          </div>
+
+          <div class="hint">
+            Недели создадутся от начала до конца семестра: каждая неделя — с
+            понедельника по воскресенье, кроме первой и последней (их границы
+            срезаются по датам семестра). Выходные (суббота, воскресенье и дни
+            из вкладки «Выходные дни») учитываются: полностью нерабочие недели
+            пропускаются, а перед длинным перерывом неделя обрывается на
+            последнем учебном дне. Все изменения сохраняются в базу; повторное
+            нажатие безопасно — лишние недели удаляются, недостающие создаются.
+          </div>
+
+          <div id="genWeeksStatus" class="muted"></div>
+        </div>
+
+        <div class="modal-footer">
+          <button id="genWeeksCancel" class="btn">Отмена</button>
+          <button id="genWeeksRun" class="btn btn-primary">Создать недели</button>
         </div>
       </div>
     </div>
