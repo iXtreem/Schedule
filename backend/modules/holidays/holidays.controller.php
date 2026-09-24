@@ -1,9 +1,19 @@
+
 <?php
 require_once __DIR__ . '/../../lib/response.php';
 require_once __DIR__ . '/../../lib/request.php';
 require_once __DIR__ . '/holidays.repo.php';
 
-// POST ?entity=holiday { date: "YYYY-MM-DD" }
+// Формат даты строгий: YYYY-MM-DD (без strtotime — он «сглаживает» мусорные значения).
+function isValidDateStr($date) {
+  if (!is_string($date) || !preg_match('/^\d{4}-\d{2}-\d{2}$/', $date)) return false;
+  [$y, $m, $d] = array_map('intval', explode('-', $date));
+  return checkdate($m, $d, $y);
+}
+
+// POST ?entity=holiday { date: "YYYY-MM-DD", kind: "off"|"reduced" }
+//   kind=off     — красный день (полный выходной),
+//   kind=reduced — жёлтый день (сокращённые пары).
 // DELETE ?entity=holiday&date=YYYY-MM-DD
 function holidayController($conn, $method) {
   if ($method === 'POST') {
@@ -11,14 +21,14 @@ function holidayController($conn, $method) {
     $date = $body['date'] ?? null;
     if (!$date) errorJson('date required', 400);
 
-    //проверка формата и запрет воскресенья
-    $ts = strtotime($date);
-    if ($ts === false) errorJson('invalid date', 400);
-    if ((int)date('w', $ts) === 0) { // 0 = Sunday
-      errorJson('Sunday cannot be a holiday', 400);
-    }
+    // проверка формата; воскресенье разрешён — в календаре «Выходные дни»
+    // можно отмечать любые дни, включая воскресенья
+    if (!isValidDateStr($date)) errorJson('invalid date', 400);
 
-    repoAddHoliday($conn, $date);
+    // вид отметки: только два допустимых значения, всё остальное — «off»
+    $kind = ($body['kind'] ?? 'off') === 'reduced' ? 'reduced' : 'off';
+
+    repoAddHoliday($conn, $date, $kind);
     sendJson(['success' => true]);
   }
 
@@ -26,12 +36,8 @@ function holidayController($conn, $method) {
     $date = getQuery('date', null);
     if (!$date) errorJson('date required', 400);
 
-    //тоже проверим дату
-    $ts = strtotime($date);
-    if ($ts === false) errorJson('invalid date', 400);
-    if ((int)date('w', $ts) === 0) {
-      errorJson('Sunday cannot be a holiday', 400);
-    }
+    // тоже проверим дату (снимать отметку можно с любого дня, включая воскресенье)
+    if (!isValidDateStr($date)) errorJson('invalid date', 400);
 
     repoRemoveHoliday($conn, $date);
     sendJson(['success' => true]);

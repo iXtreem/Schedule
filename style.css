@@ -1154,6 +1154,10 @@ body.dict-modal-dragging {
   background: #e53935; /* красный = выходной день */
 }
 
+.cal-dot-reduced {
+  background: #ffd54f; /* жёлтый = сокращённый день */
+}
+
 .cal-table {
   width: 100%;
   border-collapse: collapse;
@@ -1183,11 +1187,19 @@ body.dict-modal-dragging {
   background: #eef3ff;
 }
 
-/* Отмеченный (красный) день — повторный клик снимает класс */
+/* Отмеченный красный день — полный выходной (не попадает в расписание) */
 .cal-day-off,
 .cal-day-off:hover {
   background: #e53935;
   color: #fff;
+  font-weight: 600;
+}
+
+/* Отмеченный жёлтый день — сокращённый (пара идут по «праздничному» времени) */
+.cal-day-reduced,
+.cal-day-reduced:hover {
+  background: #ffd54f;
+  color: #5c4a00;
   font-weight: 600;
 }
 

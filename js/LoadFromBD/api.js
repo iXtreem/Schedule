@@ -1,3 +1,4 @@
+
 const API = new URL(
   "./backend/public/index.php",
   window.location.href,
@@ -163,11 +164,13 @@ export const api = {
       }),
       throwOnError: true,
     }),
-  addHoliday: (dateStr) =>
+  // Отметить день в календаре «Выходные дни».
+  // kind: "off" — красный (полный выходной), "reduced" — жёлтый (сокращённые пары).
+  addHoliday: (dateStr, kind = "off") =>
     requestJson(`${API}?entity=holiday`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ date: dateStr }),
+      body: JSON.stringify({ date: dateStr, kind }),
       throwOnError: true,
     }),
 

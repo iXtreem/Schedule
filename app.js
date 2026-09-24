@@ -30,6 +30,10 @@ export const state = {
   currentWeekId: null,
   weekStart: null,
   holidays: [],
+  // Отметки дней из календаря «Выходные дни»: { "YYYY-MM-DD": "off"|"reduced" }
+  // off (красный) — полный выходной, день убирается из таблиц;
+  // reduced (жёлтый) — день работает по сокращённому времени пар.
+  dayMarks: {},
 
   groups: [],
   subjects: [],
@@ -320,7 +324,7 @@ async function init() {
       const wk = state.weeks.find(
         (w) => Number(w.id) === Number(state.currentWeekId)
       );
-      if (wk) state.holidays = await api.holidaysRange(wk.start_date, wk.end_date);
+      if (wk) applyDayMarks(await api.holidaysRange(wk.start_date, wk.end_date));
       renderActiveTable();
     } catch (err) {
       console.error("Не удалось обновить праздники:", err);
@@ -345,6 +349,22 @@ async function init() {
   bindEvents();
 }
 
+// Приводит ответ holidays_range к виду { "YYYY-MM-DD": "off"|"reduced" } и
+// складывает в state.dayMarks. Поддерживает старый формат ответа (массив строк):
+// такие отметки считаются полными выходными ("off").
+function applyDayMarks(list) {
+  const marks = {};
+  for (const item of list || []) {
+    if (typeof item === "string") marks[item] = "off";
+    else if (item && item.date)
+      marks[item.date] = item.kind === "reduced" ? "reduced" : "off";
+  }
+  state.dayMarks = marks;
+  // state.holidays оставляем совместимым: список всех отмеченных дат
+  state.holidays = Object.keys(marks);
+  return marks;
+}
+
 async function changeWeek(weekId) {
   state.currentWeekId = Number(weekId);
 
@@ -356,7 +376,7 @@ async function changeWeek(weekId) {
   const rawLessons = await api.scheduleForWeek(weekId);
   state.lessons = normalizeLessons(rawLessons);
 
-  state.holidays = await api.holidaysRange(wk.start_date, wk.end_date);
+  applyDayMarks(await api.holidaysRange(wk.start_date, wk.end_date));
 
   renderWeekDates();
   renderActiveTable();

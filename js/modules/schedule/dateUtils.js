@@ -1,4 +1,5 @@
 
+
 import { state } from "../../../app.js";
 import { getBellSchedules } from "../modals/bellStore.js";
 import { normalizeBellText } from "./bellUtils.js"; // ← новая зависимость
@@ -41,11 +42,35 @@ export function formatDateForDisplay(date) {
   return `${dd}.${mm}.${yyyy}`;
 }
 
+// Тип дня для выбора расписания звонков:
+//   "holiday" — жёлтый день из календаря «Выходные дни» (сокращённые пары);
+//   "sunday"  — воскресенье;
+//   "workday" — обычный рабочий день.
+// Красные (полные выходные) дни в таблицу не попадают вообще (см. isFullOffDay),
+// поэтому отдельного типа для них не нужно.
 export function getDayType(date) {
   const dateStr = formatDateForInput(date);
-  if (state.holidays.includes(dateStr)) return "holiday";
+  if (isReducedDay(dateStr)) return "holiday";
   if (date.getDay() === 0) return "sunday";
   return "workday";
+}
+
+// ---- Отметки из календаря «Выходные дни» (state.dayMarks) ----
+// kind: "off" (красный — полный выходной) | "reduced" (жёлтый — сокращённый).
+
+// Полностью выходной день? Такие дни НЕ отображаются в таблицах расписания.
+export function isFullOffDay(dateOrStr) {
+  const dateStr =
+    typeof dateOrStr === "string" ? dateOrStr : formatDateForInput(dateOrStr);
+  return state.dayMarks[dateStr] === "off";
+}
+
+// Сокращённый (жёлтый) день? В таблицах остаётся, но время пар меняется
+// на «праздничное» (тип звонков holiday).
+export function isReducedDay(dateOrStr) {
+  const dateStr =
+    typeof dateOrStr === "string" ? dateOrStr : formatDateForInput(dateOrStr);
+  return state.dayMarks[dateStr] === "reduced";
 }
 export function findLesson(weekId, groupId, dayOfWeek, timeSlot) {
 return state.lessons.find(
@@ -54,7 +79,7 @@ return state.lessons.find(
 
       l.weekId === weekId &&
 
-   	      l.groupId === groupId &&
+              l.groupId === groupId &&
 
         l.dayOfWeek === dayOfWeek &&
 

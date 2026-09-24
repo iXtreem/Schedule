@@ -7,6 +7,7 @@ import {
     getMaxPairs,
     getTimeSlots,
     findLesson,
+    isFullOffDay,
 } from "./dateUtils.js";
 import { DAY_NAMES } from "../../LoadFromBD/bd.js";
 
@@ -89,6 +90,10 @@ export function renderTable() {
     for (let dayIndex = 0; dayIndex < 7; dayIndex++) {
         const date = new Date(state.weekStart);
         date.setDate(date.getDate() + dayIndex);
+
+        // Красный день из календаря «Выходные дни» — полный выходной:
+        // целиком пропускаем его, строки этого дня в таблицу не попадают.
+        if (isFullOffDay(date)) continue;
 
         const dayType = getDayType(date);
         const timeSlots = getTimeSlots(dayType);

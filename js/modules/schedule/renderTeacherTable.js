@@ -1,9 +1,11 @@
+
 import { state, scheduleTable } from "../../../app.js";
 import { DAY_NAMES } from "../../LoadFromBD/bd.js";
 import {
   formatDateForDisplay,
   formatDateForInput,
   getDayType,
+  isFullOffDay,
   getMaxPairs,
   getTimeSlots,
 } from "./dateUtils.js";
@@ -56,6 +58,9 @@ export function renderTeacherTable() {
   for (let dayIndex = 0; dayIndex < 7; dayIndex++) {
     const date = new Date(state.weekStart);
     date.setDate(date.getDate() + dayIndex);
+
+    // Красный день («Выходные дни») — полный выходной, исключаем из таблицы.
+    if (isFullOffDay(date)) continue;
 
     const dayType = getDayType(date);
     const maxPairs = getMaxPairs(dayType);
