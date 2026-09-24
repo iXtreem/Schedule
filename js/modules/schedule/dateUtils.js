@@ -41,7 +41,11 @@ export function formatDateForDisplay(date) {
   const yyyy = date.getFullYear();
   return `${dd}.${mm}.${yyyy}`;
 }
-
+export function isFullOffDay(dateOrStr) {
+  const dateStr =
+    typeof dateOrStr === "string" ? dateOrStr : formatDateForInput(dateOrStr);
+  return state.dayMarks[dateStr] === "off";
+}
 export function getDayType(date) {
   const dateStr = formatDateForInput(date);
   // ВАЖНО: state.holidays должен ВСЕГДА быть массивом строк 'YYYY-MM-DD'
