@@ -1119,9 +1119,6 @@ body.dict-modal-dragging {
   text-align: right;
 }
 
-.dict-table-bell thead th {
-  text-align: left;
-}
 /* ---------- Вкладка «Выходные дни»: календарь в окне справочников ---------- */
 
 .cal-toolbar {
