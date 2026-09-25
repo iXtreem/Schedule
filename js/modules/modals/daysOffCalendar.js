@@ -1,10 +1,14 @@
 
 
 // Модуль вкладки «Выходные дни» окна «Справочники».
-// Показывает календарь на месяц: клик по дню закрашивает его красным
-// (день становится выходным/праздником), повторный клик снимает подсветку.
-// Данные хранятся в той же таблице TB_Holidays, что и переключатель
-// «Праздник» у дня недели в таблице расписания (см. renderTable.js / app.js).
+// Показывает календарь на месяц:
+//   • левая кнопка мыши  — жёлтый день: праздник с альтернативным
+//     расписанием (занятия остаются, но по «праздничному» времени пар);
+//   • правая кнопка мыши — красный день: полный выходной, день исключается
+//     из основного расписания;
+//   • повторное нажатие тем же способом на уже отмеченный день снимает отметку.
+// Данные хранятся в таблице holiday (бывшая TB_Holidays) в колонке kind:
+// 'reduced' (жёлтый) | 'off' (красный).
 import { api } from "../../LoadFromBD/api.js";
 
 const DAY_NAMES_SHORT = ["Пн", "Вт", "Ср", "Чт", "Пт", "Сб", "Вс"];
@@ -19,7 +23,8 @@ let bound = false;        // навешивали ли обработчики
 
 let viewYear = new Date().getFullYear();   // отображаемый год
 let viewMonth = new Date().getMonth();     // отображаемый месяц (0..11)
-let holidaysSet = new Set();               // выбранные даты в формате YYYY-MM-DD
+// Отмеченные даты: 'YYYY-MM-DD' -> 'off' (красный) | 'reduced' (жёлтый)
+let holidayMarks = new Map();
 
 // ---- Служебные функции ----
 
@@ -43,8 +48,18 @@ async function loadHolidays() {
   const { start, end } = monthRange();
   try {
     const list = await api.holidaysRange(start, end);
-    // защита от «битого» ответа: используем только массив строк-дат
-    holidaysSet = new Set(Array.isArray(list) ? list : []);
+    // защита от «битого» ответа: бэкенд возвращает [{date, kind}, ...],
+    // но может вернуть и просто массив строк-дат (старый формат — считаем off)
+    holidayMarks = new Map();
+    if (Array.isArray(list)) {
+      for (const item of list) {
+        if (typeof item === "string") {
+          holidayMarks.set(item, "off");
+        } else if (item && item.date) {
+          holidayMarks.set(item.date, item.kind === "reduced" ? "reduced" : "off");
+        }
+      }
+    }
   } catch (e) {
     alert(`Не удалось загрузить выходные дни: ${e.message || e}`);
   }
@@ -73,7 +88,8 @@ function renderCalendar() {
       <button type="button" class="icon-btn" data-cal-nav="-1" title="Предыдущий месяц">◀</button>
       <span class="cal-title">${MONTH_NAMES[viewMonth]} ${viewYear}</span>
       <button type="button" class="icon-btn" data-cal-nav="1" title="Следующий месяц">▶</button>
-      <span class="cal-legend"><span class="cal-dot cal-dot-off"></span> — выходной день</span>
+      <span class="cal-legend"><span class="cal-dot cal-dot-reduced"></span> — праздничный день (альтернативное расписание, ЛКМ)
+      &nbsp;<span class="cal-dot cal-dot-off"></span> — выходной, удалён из расписания (ПКМ)</span>
     </div>
     <table class="cal-table"><thead><tr>`;
 
@@ -85,13 +101,20 @@ function renderCalendar() {
 
   for (let d = 1; d <= daysInMonth; d++) {
     const dateStr = toDateStr(new Date(viewYear, viewMonth, d));
-    const isOff = holidaysSet.has(dateStr);
+    const kind = holidayMarks.get(dateStr); // 'off' | 'reduced' | undefined
     const cls = [
       "cal-day",
-      isOff ? "cal-day-off" : "",   // красный = выходной
+      kind === "off" ? "cal-day-off" : "",        // красный = полный выходной
+      kind === "reduced" ? "cal-day-reduced" : "", // жёлтый = праздник, сокращ. расписание
       dateStr === todayStr ? "cal-day-today" : "",
     ].filter(Boolean).join(" ");
-    html += `<td class="${cls}" data-date="${dateStr}" title="Нажмите, чтобы отметить/снять выходной">${d}</td>`;
+    const title =
+      kind === "off"
+        ? "Выходной день (удалён из расписания). ПКМ — снять отметку"
+        : kind === "reduced"
+          ? "Праздничный день: альтернативное расписание. ЛКМ — снять отметку"
+          : "ЛКМ — праздничный день (альтернативное расписание), ПКМ — выходной (убрать из расписания)";
+    html += `<td class="${cls}" data-date="${dateStr}" title="${title}">${d}</td>`;
     if ((leading + d) % 7 === 0 && d !== daysInMonth) html += `</tr><tr>`;
   }
 
@@ -105,17 +128,20 @@ function renderCalendar() {
 
 // ---- Взаимодействие ----
 
-// Переключение состояния дня: обычный <-> красный (выходной).
-// При клике сразу сохраняем/удаляем запись в базе, затем перерисовываем.
-async function toggleDay(dateStr) {
-  const wasOff = holidaysSet.has(dateStr);
+// Переключение состояния дня: обычный <-> отмеченный.
+// kind: 'reduced' — жёлтый (праздник с альтернативным расписанием, ЛКМ),
+//       'off'     — красный (полный выходной, удалён из расписания, ПКМ).
+// Если день уже отмечен этим же способом — отметка снимается;
+// если другим — цвет меняется. При любом действии сразу сохраняем в базу.
+async function toggleDay(dateStr, kind) {
+  const current = holidayMarks.get(dateStr);
   try {
-    if (wasOff) {
+    if (current === kind) {
       await api.removeHoliday(dateStr);
-      holidaysSet.delete(dateStr);
+      holidayMarks.delete(dateStr);
     } else {
-      await api.addHoliday(dateStr);
-      holidaysSet.add(dateStr);
+      await api.addHoliday(dateStr, kind);
+      holidayMarks.set(dateStr, kind);
     }
   } catch (e) {
     alert(`Не удалось изменить день ${dateStr}: ${e.message || e}`);
@@ -126,7 +152,7 @@ async function toggleDay(dateStr) {
   window.dispatchEvent(new CustomEvent("holidays-changed"));
 }
 
-// Единый обработчик кликов внутри календаря (навешивается один раз).
+// Единый обработчик левых кликов внутри календаря (навешивается один раз).
 function onTableClick(e) {
   const nav = e.target.closest("[data-cal-nav]");
   if (nav) {
@@ -138,7 +164,16 @@ function onTableClick(e) {
     return;
   }
   const cell = e.target.closest(".cal-day");
-  if (cell) toggleDay(cell.dataset.date);
+  if (cell) toggleDay(cell.dataset.date, "reduced"); // ЛКМ — жёлтый день
+}
+
+// Правая кнопка мыши по дню — красный день (полный выходной).
+// Отключаем стандартное контекстное меню браузера.
+function onTableContextMenu(e) {
+  const cell = e.target.closest(".cal-day");
+  if (!cell) return;
+  e.preventDefault();
+  toggleDay(cell.dataset.date, "off");
 }
 
 // ---- Точка входа для dictModal ----
@@ -151,6 +186,7 @@ export async function showDaysOffCalendar(container) {
   if (!bound) {
     bound = true;
     rootEl.addEventListener("click", onTableClick);
+    rootEl.addEventListener("contextmenu", onTableContextMenu);
   }
 
   // При первом открытии подхватываем текущий месяц активной недели расписания.

@@ -154,22 +154,25 @@ function normalizeGroups(raw) {
   );
 }
 
-// Нормализация ответа «праздники недели» к массиву строк 'YYYY-MM-DD'.
-// Бэкенд (entity=holidays_range) обычно возвращает ["2026-10-05", ...],
-// но при ошибке/неожиданном формате может вернуть объект вида
-// {"2026-10-02": true} или null — из-за этого в getDayType падал
-// renderTable с TypeError. Приводим любой ответ к безопасному массиву.
-function normalizeHolidays(raw) {
+// Нормализация ответа «отметки дней недели» (entity=holidays_range) к виду
+// { dates: ['YYYY-MM-DD', ...], marks: { 'YYYY-MM-DD': 'off'|'reduced' } }.
+// Бэкенд возвращает список [{date, kind}, ...]; старый формат — массив строк
+// или объект-словарь {"2026-10-02": true} — тоже поддерживается (kind='off').
+function normalizeHolidayMarks(raw) {
+  const marks = {};
   if (Array.isArray(raw)) {
-    return raw
-      .map((x) => (typeof x === "string" ? x : x && x.date)) // строки или {date}
-      .filter(Boolean);
-  }
-  if (raw && typeof raw === "object") {
+    for (const item of raw) {
+      if (typeof item === "string") {
+        marks[item] = "off";
+      } else if (item && item.date) {
+        marks[item.date] = item.kind === "reduced" ? "reduced" : "off";
+      }
+    }
+  } else if (raw && typeof raw === "object") {
     // объект-словарь дат -> берём ключи, где значение «истинно»
-    return Object.keys(raw).filter((k) => raw[k]);
+    for (const k of Object.keys(raw)) if (raw[k]) marks[k] = "off";
   }
-  return [];
+  return { dates: Object.keys(marks), marks };
 }
 
 function normalizeLessons(raw) {
@@ -360,7 +363,11 @@ async function init() {
         (w) => Number(w.id) === Number(state.currentWeekId)
       );
       // нормализуем ответ к массиву: бэкенд при ошибке может вернуть не список
-      if (wk) state.holidays = normalizeHolidays(await api.holidaysRange(wk.start_date, wk.end_date));
+      if (wk) {
+        const hm = normalizeHolidayMarks(await api.holidaysRange(wk.start_date, wk.end_date));
+        state.holidays = hm.dates;
+        state.dayMarks = hm.marks;
+      }
       renderActiveTable();
     } catch (err) {
       console.error("Не удалось обновить праздники:", err);
@@ -396,10 +403,14 @@ async function changeWeek(weekId) {
   const rawLessons = await api.scheduleForWeek(weekId);
   state.lessons = normalizeLessons(rawLessons);
 
-  // Праздники недели: всегда нормализуем к массиву строк 'YYYY-MM-DD'.
-  // Это защита от падения renderTable (TypeError в getDayType), если бэкенд
-  // вернул вместо списка объект/null (например, при ошибке SQL или сессии).
-  state.holidays = normalizeHolidays(await api.holidaysRange(wk.start_date, wk.end_date));
+  // Отметки дней недели: 'YYYY-MM-DD' -> 'off' (красный, полный выходной)
+  // или 'reduced' (жёлтый, праздник с альтернативным расписанием).
+  // state.holidays — просто список дат для getDayType(); state.dayMarks —
+  // карта видов отметок для isFullOffDay(). Это защита от падения renderTable
+  // (TypeError в getDayType), если бэкенд вернул вместо списка объект/null.
+  const hm = normalizeHolidayMarks(await api.holidaysRange(wk.start_date, wk.end_date));
+  state.holidays = hm.dates;
+  state.dayMarks = hm.marks;
 
   renderWeekDates();
   renderActiveTable();

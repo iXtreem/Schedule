@@ -1,4 +1,5 @@
 
+
 <?php
 require_once __DIR__ . '/../../lib/db.php';
 
@@ -28,11 +29,18 @@ function repoAddWeek($conn, $name, $start, $end) {
 
 // ---- Автосоздание недель на основе выходных --------------------------------
 
-// Все даты выходных (праздников) из таблицы holiday.
-// Используем при генерации недель: день, объявленный выходным,
+// Все даты ПОЛНЫХ выходных (kind='off') из таблицы holiday.
+// Жёлтые дни (kind='reduced' — праздник с альтернативным расписанием)
+// учебными не считаются, но неделю не «рвут» и пропускаются здесь так же,
+// как раньше: в генераторе недель нерабочими остаются только красные дни.
+// Используем при генерации недель: день, объявленный полным выходным,
 // не является учебным и «разрывает» непрерывную учебную неделю.
 function repoGetAllHolidayDates($conn) {
-  $rows = dbAll($conn, "SELECT DATE_FORMAT(holiday_date, '%Y-%m-%d') AS d FROM holiday");
+  $rows = dbAll(
+    $conn,
+    "SELECT DATE_FORMAT(holiday_date, '%Y-%m-%d') AS d
+     FROM holiday WHERE COALESCE(kind, 'off') = 'off'"
+  );
   $set = [];
   foreach ($rows as $row) $set[$row['d']] = true;
   return $set; // ассоциативный массив дата => true для быстрой проверки
