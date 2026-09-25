@@ -148,8 +148,14 @@ async function toggleDay(dateStr, kind) {
     return;
   }
   renderCalendar();
-  // Сообщаем главному экрану, что список праздников мог измениться.
-  window.dispatchEvent(new CustomEvent("holidays-changed"));
+  // Сообщаем главному экрану, что список праздников изменился, и передаём
+  // конкретную дату/вид отметки — тогда таблица расписания обновляется
+  // мгновенно, не дожидаясь ответа сервера. kind === null — отметка снята.
+  window.dispatchEvent(
+    new CustomEvent("holidays-changed", {
+      detail: { date: dateStr, kind: holidayMarks.get(dateStr) ?? null },
+    })
+  );
 }
 
 // Единый обработчик левых кликов внутри календаря (навешивается один раз).

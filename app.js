@@ -357,17 +357,44 @@ async function init() {
   });
 
   // Вкладка «Выходные дни» меняет праздники через календарь — обновляем таблицу расписания.
-  window.addEventListener("holidays-changed", async () => {
+  // ВАЖНО: событие приходит с датой и видом отметки ({ date, kind }). Меняем
+  // состояние локально СРАЗУ (синхронно), чтобы таблица перерисовалась
+  // мгновенно — даже если запрос к серверу за свежим диапазоном недели
+  // замедлится или вернёт устаревшие данные. Раньше обновление зависело
+  // только от holidaysRange(неделя), и при «битом» ответе в таблице ничего
+  // не менялось.
+  window.addEventListener("holidays-changed", async (e) => {
     try {
+      const detail = e?.detail || {};
+      if (detail.date) {
+        if (detail.kind) {
+          state.dayMarks[detail.date] = detail.kind;
+          if (!state.holidays.includes(detail.date)) state.holidays.push(detail.date);
+        } else {
+          delete state.dayMarks[detail.date];
+          state.holidays = state.holidays.filter((d) => d !== detail.date);
+        }
+      }
+
+      // синхронизация с сервером — в фоне (для актуальных данных на будущее)
       const wk = state.weeks.find(
         (w) => Number(w.id) === Number(state.currentWeekId)
       );
-      // нормализуем ответ к массиву: бэкенд при ошибке может вернуть не список
-      if (wk) {
-        const hm = normalizeHolidayMarks(await api.holidaysRange(wk.start_date, wk.end_date));
-        state.holidays = hm.dates;
-        state.dayMarks = hm.marks;
-      }
+      const refreshPromise = wk
+        ? api
+            .holidaysRange(wk.start_date, wk.end_date)
+            .then((raw) => {
+              const hm = normalizeHolidayMarks(raw);
+              state.holidays = hm.dates;
+              state.dayMarks = hm.marks;
+            })
+            .catch((err) => {
+              console.error("Не удалось обновить праздники с сервера:", err);
+            })
+        : Promise.resolve();
+
+      renderActiveTable();
+      await refreshPromise;
       renderActiveTable();
     } catch (err) {
       console.error("Не удалось обновить праздники:", err);
