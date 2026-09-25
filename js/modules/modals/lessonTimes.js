@@ -6,8 +6,9 @@
 // но представлены в более удобном виде:
 //   slots[i] = { startMin: 540, durationMin: 90 }        — i-я пара (начало + длительность)
 //   breaksMin[i] = 10                                    — перемена ПОСЛЕ i-й пары (между парами)
-//   innerBreakMin = 5                                    — перерыв ВНУТРИ одной пары:
-//     пара 8:00–9:30 с innerBreakMin=5 отображается как «8:00-8:45<br>8:50-9:30»
+//   innerBreakMin = 10                                   — перерыв ВНУТРИ одной пары:
+//     длительность пары указана ОБЩЕЙ (включая этот перерыв), поэтому пара 90 мин
+//     с innerBreakMin=10 отображается как «8:00-8:40<br>8:50-9:30» (8:00–9:30 = 90 мин)
 // Сохранённый формат колоколок: "HH:MM-HH:MM<br>HH:MM-HH:MM" на пару
 // (одна строка на пару — backend менять не нужно).
 //
@@ -108,10 +109,15 @@ function parseSlotRange(str) {
 // а 2-ю пару 19:00 — вторая начнётся ровно в 9:00.
 // Начало пары можно изменить только у ПЕРВОЙ пары (и то через поле «Начало»):
 // поля «Начало» у остальных пар заблокированы и пересчитываются автоматически.
+// ВАЖНО: les.durationMin — ОБЩАЯ длительность пары, уже включающая перерыв
+// внутри пары (innerBreakMin). То есть при durationMin=90 и innerBreakMin=10
+// пара идёт 8:00–9:30 (два блока по 40 мин + перерыв 10 мин), а не 100 минут.
 function normalize(state) {
   let prevEnd = null; // окончание предыдущей пары (в минутах)
+  const inner = clamp(state.innerBreakMin ?? 0, MIN_INNER_GAP, 60);
   state.lessons.forEach((les, i) => {
-    les.durationMin = clamp(les.durationMin, 15, 240); // пара не может быть абсурдно короткой/длинной
+    // Минимальная длительность = перерыв внутри + два занятия хотя бы по 5 мин
+    les.durationMin = clamp(les.durationMin, inner + 10, 240);
     if (i === 0) {
       // первая пара: начало задаётся вручную, но не позже конца суток
       les.startMin = clamp(les.startMin, 0, MAX_MIN - les.durationMin);
@@ -177,8 +183,9 @@ function bellToState(bellData, typeKey) {
 
 // Локальное состояние -> payload для saveBellSchedule.
 // Каждая пара — одна строка; при innerBreakMin > 0 она разбивается на два
-// блока через <br>: «8:00-8:45<br>8:50-9:30» (внутренний перерыв заданного
-// размера). При innerBreakMin = 0 сохраняется старый вид «8:00-9:30».
+// блока через <br>, причём перерыв ВЫЧИТАЕТСЯ из длительности пары:
+// «8:00-8:40<br>8:50-9:30» (пара 90 мин, перерыв 10 мин).
+// При innerBreakMin = 0 сохраняется старый вид «8:00-9:30».
 function stateToBell(state) {
   const out = {};
   state.lessons.forEach((les, i) => {
@@ -189,14 +196,17 @@ function stateToBell(state) {
 
 // Текст одного слота с учётом внутреннего перерыва (общий для сохранения
 // и предпросмотра в таблице настроек).
-// Точка деления: половина пары + смещение innerOffsetMin (если оно было
-// задано в сохранённых данных), но так, чтобы второй блок не был меньше 5 мин.
+// Длительность пары (durationMin) — ОБЩАЯ, включая внутренний перерыв.
+// Точка деления: половина времени занятий + смещение innerOffsetMin (если оно
+// было задано в сохранённых данных), но так, чтобы блоки не были абсурдно короткими.
+// Пример: пара 90 мин с перерывом 10 мин → блоки по 40 мин: «8:00-8:40<br>8:50-9:30».
 function lessonSlotText(state, les) {
   const inner = clamp(state.innerBreakMin ?? 0, MIN_INNER_GAP, 60);
   const end = les.endMin ?? les.startMin + les.durationMin;
-  if (inner > 0 && end - les.startMin > inner + 10) {
-    let half = Math.floor((end - les.startMin - inner) / 2) + (state.innerOffsetMin ?? 0);
-    half = clamp(half, 15, end - les.startMin - inner - 5);
+  const total = end - les.startMin; // общая длительность пары вместе с перерывом
+  if (inner > 0 && total > inner + 10) {
+    let half = Math.floor((total - inner) / 2) + (state.innerOffsetMin ?? 0);
+    half = clamp(half, 15, total - inner - 5);
     const midEnd = les.startMin + half;
     return `${fmtHM(les.startMin)}-${fmtHM(midEnd)}<br>${fmtHM(midEnd + inner)}-${fmtHM(end)}`;
   }
@@ -226,7 +236,9 @@ function renderAll() {
 }
 
 // Одно общее поле «Перерыв внутри пары» для типа дня: значение применяется
-// ко всем парам этого типа (пара 8:00–9:30 → «8:00-8:45<br>8:50-9:30»).
+// ко всем парам этого типа и ВЫЧИТАЕТСЯ из длительности пары (два блока по
+// (длительность − перерыв)/2 минут). Пара 90 мин с перерывом 10 мин →
+// «8:00-8:40<br>8:50-9:30».
 function renderInnerBreakControl(dt, st) {
   const v = clamp(st.innerBreakMin ?? DEFAULT_INNER_BREAK, MIN_INNER_GAP, 60);
   return `
@@ -234,7 +246,8 @@ function renderInnerBreakControl(dt, st) {
       <label>Перерыв внутри каждой пары:</label>
       <input class="select dict-input lt-num-inp" type="number" min="${MIN_INNER_GAP}" max="60" step="1"
              data-lt="innerbreak" data-lt-type="${dt.key}" value="${v}" /> мин
-      <span class="muted">(например: пара 8:00–9:30 покажется как «8:00-8:45&nbsp;&nbsp;8:50-9:30»; 0 — без перерыва)</span>
+      <span class="muted">(вычитается из длительности пары: пара 90&nbsp;мин с перерывом 10&nbsp;мин →
+        «8:00-8:40&nbsp;&nbsp;8:50-9:30»; 0 — без перерыва)</span>
     </div>`;
 }
 
@@ -245,12 +258,15 @@ function renderDayType(dt) {
       const isLast = i === st.lessons.length - 1;
       const isFirst = i === 0;
       const brk = st.breaks[i] ?? DEFAULT_BREAK;
+      // Минимум длительности зависит от перерыва внутри пары (он вычитается из неё)
+      const innerNow = clamp(st.innerBreakMin ?? 0, MIN_INNER_GAP, 60);
+      const durMin = Math.max(15, innerNow + 10);
       return `
       <tr data-lt-row="${dt.key}:${i}">
         <td class="lt-num">${i + 1} пара</td>
         <td><input class="select dict-input lt-time" type="time" data-lt="start" value="${fmtHM(les.startMin)}"
              ${isFirst ? "" : 'disabled title="Начало следующей пары считается автоматически: конец предыдущей + перемена"'} /></td>
-        <td><input class="select dict-input lt-num-inp" type="number" min="15" max="240" step="5"
+        <td><input class="select dict-input lt-num-inp" type="number" min="${durMin}" max="240" step="5"
                    data-lt="duration" value="${les.durationMin}" /> мин</td>
         <td class="lt-end">${fmtHM(les.endMin ?? les.startMin + les.durationMin)}${previewCell(st, les)}</td>
         <td>${isLast ? '<span class="muted">—</span>' : `
@@ -299,7 +315,11 @@ function syncStateFromDom(typeKey) {
       if (startVal !== null) les.startMin = clamp(startVal, 0, MAX_MIN);
     }
     const durVal = Number(tr.querySelector('[data-lt="duration"]')?.value);
-    if (Number.isFinite(durVal)) les.durationMin = clamp(durVal, 15, 240);
+    if (Number.isFinite(durVal)) {
+      // Длительность пары — общая, включая перерыв внутри неё
+      const inner = clamp(st.innerBreakMin ?? 0, MIN_INNER_GAP, 60);
+      les.durationMin = clamp(durVal, Math.max(15, inner + 10), 240);
+    }
     const brkVal = Number(tr.querySelector('[data-lt="break"]')?.value);
     if (Number.isFinite(brkVal) && st.breaks[i] !== undefined) st.breaks[i] = clamp(brkVal, MIN_GAP, 120);
   });
@@ -321,7 +341,9 @@ function onInput(e) {
   } else if (e.target.matches('[data-lt="duration"]')) {
     const v = Number(e.target.value);
     if (!Number.isFinite(v)) return;
-    st.lessons[idx].durationMin = clamp(v, 15, 240);
+    // Длительность пары — общая, включая перерыв внутри неё
+    const inner = clamp(st.innerBreakMin ?? 0, MIN_INNER_GAP, 60);
+    st.lessons[idx].durationMin = clamp(v, Math.max(15, inner + 10), 240);
   } else if (e.target.matches('[data-lt="break"]')) {
     const v = Number(e.target.value);
     if (!Number.isFinite(v)) return;
@@ -335,7 +357,11 @@ function onInput(e) {
     const v = Number(e.target.value);
     if (!Number.isFinite(v)) return;
     s.innerBreakMin = clamp(v, MIN_INNER_GAP, 60);
+    // Смещение точек деления было рассчитано под старый перерыв — сбрасываем,
+    // чтобы блоки делились строго по формуле (длительность − перерыв) / 2
+    delete s.innerOffsetMin;
     markDirty();
+    normalize(s); // длительности могут не проходить минимум (inner + 10) — корректируем
     renderAll(); // пересобираем разметку (в т.ч. это же поле с новым значением)
     return;
   } else {
