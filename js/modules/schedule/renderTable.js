@@ -8,6 +8,7 @@ import {
     getTimeSlots,
     findLesson,
     isFullOffDay,
+    getDaySlotFromDate,
 } from "./dateUtils.js";
 import { DAY_NAMES } from "../../LoadFromBD/bd.js";
 
@@ -91,6 +92,12 @@ export function renderTable() {
         const date = new Date(state.weekStart);
         date.setDate(date.getDate() + dayIndex);
 
+        // День недели берём из фактической даты, а не из позиции строки.
+        // Если число не попадает ни в один день недели (некорректная дата) —
+        // строка такого дня не отображается вовсе.
+        const daySlot = getDaySlotFromDate(date);
+        if (daySlot === null || Number.isNaN(date.getTime())) continue;
+
         // Красный день из календаря «Выходные дни» — полный выходной:
         // целиком пропускаем его, строки этого дня в таблицу не попадают.
         if (isFullOffDay(date)) continue;
@@ -104,7 +111,10 @@ export function renderTable() {
         // (isHoliday больше не используется здесь)
 
         for (let pairIndex = 0; pairIndex < maxPairs; pairIndex++) {
-            const dayOfWeek = dayIndex + 1;
+            // Фактический день недели из даты (1 = Пн … 7 = Вс),
+            // а не «позиция строки + 1» — иначе при начале недели не с
+            // понедельника занятия съезжали на соседний день.
+            const dayOfWeek = daySlot + 1;
             const timeSlot = pairIndex + 1;
 
             html += "<tr>";
@@ -112,7 +122,7 @@ export function renderTable() {
             if (pairIndex === 0) {
                 html += `
                 <td class="day-cell" rowspan="${maxPairs}">
-                    <div><b>${DAY_NAMES[dayIndex]}</b></div>
+                    <div><b>${DAY_NAMES[daySlot]}</b></div>
                     <div class="muted">${formatDateForDisplay(date)}</div>
                 </td>
                 `;
@@ -180,7 +190,7 @@ export function renderTable() {
                 <td class="clickable"
                     data-role="lesson-cell"
                     data-group-id="${g.id}"
-                    data-day-index="${dayIndex}"
+                    data-day-index="${daySlot}"
                     data-pair-index="${pairIndex}"
                     ${lesson ? `data-lesson-id="${lesson.id}"` : ""}>
                     ${lessonText}

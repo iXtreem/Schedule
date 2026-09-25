@@ -6,6 +6,7 @@ import {
   formatDateForInput,
   getDayType,
   isFullOffDay,
+  getDaySlotFromDate,
   getMaxPairs,
   getTimeSlots,
 } from "./dateUtils.js";
@@ -59,6 +60,11 @@ export function renderTeacherTable() {
     const date = new Date(state.weekStart);
     date.setDate(date.getDate() + dayIndex);
 
+    // День недели берём из фактической даты. Если число не попадает
+    // ни в один день недели (некорректная дата) — строка не отображается.
+    const daySlot = getDaySlotFromDate(date);
+    if (daySlot === null) continue;
+
     // Красный день («Выходные дни») — полный выходной, исключаем из таблицы.
     if (isFullOffDay(date)) continue;
 
@@ -68,7 +74,9 @@ export function renderTeacherTable() {
     const dateStr = formatDateForInput(date);
 
     for (let pairIndex = 0; pairIndex < maxPairs; pairIndex++) {
-      const dayOfWeek = dayIndex + 1;
+      // Фактический день недели из даты (1 = Пн … 7 = Вс), иначе при начале
+      // недели не с понедельника занятия съезжали на соседний день.
+      const dayOfWeek = daySlot + 1;
       const timeSlot = pairIndex + 1;
 
       html += "<tr>";
@@ -76,7 +84,7 @@ export function renderTeacherTable() {
       if (pairIndex === 0) {
         html += `
           <td class="day-cell day-cell--teacher" rowspan="${maxPairs}" data-date="${dateStr}">
-            <div><b>${DAY_NAMES[dayIndex]}</b></div>
+            <div><b>${DAY_NAMES[daySlot]}</b></div>
             <div class="muted">${formatDateForDisplay(date)}</div>
             <div class="muted">Тип: ${dayType}</div>
           </td>

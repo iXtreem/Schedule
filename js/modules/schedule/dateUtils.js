@@ -1,4 +1,5 @@
 
+
 import { state } from "../../../app.js";
 import { getBellSchedules } from "../modals/bellStore.js";
 import { normalizeBellText } from "./bellUtils.js"; // ← новая зависимость
@@ -65,6 +66,21 @@ export function getDayType(date) {
   if (date.getDay() === 0) return "sunday";
   return "workday";
 }
+// Соответствие «индекс строки таблицы (0..6) → день недели по дате».
+// Раньше таблица всегда выводила полную неделю: 7 строк подряд от даты
+// начала недели, и подписи дней (DAY_NAMES[dayIndex]) были привязаны к
+// позиции строки, а не к реальной дате. Если неделя начиналась не с
+// понедельника (например, «Понедельник» попадал на дату вторника),
+// расписание сбивалось: занятия искали не в тот день.
+// Теперь считаем фактический день недели из даты: slot = 0 для Пн … 6 для Вс.
+// Если дата вообще не попадает ни в один день недели (защитный случай) —
+// возвращаем null, и строка такого дня в таблицу не выводится.
+export function getDaySlotFromDate(date) {
+  if (!(date instanceof Date) || !Number.isFinite(date.getTime())) return null;
+  const dow = date.getDay(); // 0 = Вс, 1 = Пн, ..., 6 = Сб
+  return dow === 0 ? 6 : dow - 1;
+}
+
 export function findLesson(weekId, groupId, dayOfWeek, timeSlot) {
 return state.lessons.find(
 
