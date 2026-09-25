@@ -1,5 +1,4 @@
 
-
 import renderWeekSelect from "./js/modules/weeks/renderWeekSelect.js";
 import {
   renderGroups,
@@ -32,6 +31,10 @@ import { api } from "./js/LoadFromBD/api.js";
 export const state = {
   currentWeekId: null,
   weekStart: null,
+  // Конец текущей недели (воскресенье) — из end_date недели в БД.
+  // Нужен таблицам расписания, чтобы не выводить строки дней, которые
+  // «вышли» за пределы недели (например, понедельник после воскресенья).
+  weekEnd: null,
   holidays: [],
   // Отметки дней (например, «off» — полный выходной). Заполняется при
   // необходимости; по умолчанию пустой объект, чтобы isFullOffDay() не падал.
@@ -427,6 +430,19 @@ async function changeWeek(weekId) {
   if (!wk) return;
 
   state.weekStart = new Date(wk.start_date);
+
+  // Конец недели (воскресенье). Берём из end_date, но не дальше
+  // «понедельник + 6 дней»: если у недели обрезанный конец или в БД
+  // ошибочная дата, лишние дни за воскресеньем в таблицу не попадут.
+  const ws = state.weekStart;
+  const nominalEnd = Number.isFinite(ws.getTime())
+    ? new Date(ws.getTime() + 6 * 86400000)
+    : null;
+  const we = wk.end_date ? new Date(wk.end_date) : null;
+  state.weekEnd =
+    we && Number.isFinite(we.getTime()) && nominalEnd && we <= nominalEnd
+      ? we
+      : nominalEnd;
 
   const rawLessons = await api.scheduleForWeek(weekId);
   state.lessons = normalizeLessons(rawLessons);

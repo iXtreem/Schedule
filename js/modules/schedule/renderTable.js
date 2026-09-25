@@ -9,6 +9,7 @@ import {
     findLesson,
     isFullOffDay,
     getDaySlotFromDate,
+    isDateInCurrentWeek,
 } from "./dateUtils.js";
 import { DAY_NAMES } from "../../LoadFromBD/bd.js";
 
@@ -93,10 +94,13 @@ export function renderTable() {
         date.setDate(date.getDate() + dayIndex);
 
         // День недели берём из фактической даты, а не из позиции строки.
-        // Если число не попадает ни в один день недели (некорректная дата) —
-        // строка такого дня не отображается вовсе.
+        // Таблица перебирает 7 позиций от даты начала недели; если неделя
+        // заканчивается раньше воскресенья (или перебор «переехал» за
+        // воскресенье), то идущий после воскресенья понедельник — это уже
+        // СЛЕДУЮЩЯЯ неделя: его не добавляем, строка не отображается.
         const daySlot = getDaySlotFromDate(date);
         if (daySlot === null || Number.isNaN(date.getTime())) continue;
+        if (!isDateInCurrentWeek(date)) continue;
 
         // Красный день из календаря «Выходные дни» — полный выходной:
         // целиком пропускаем его, строки этого дня в таблицу не попадают.

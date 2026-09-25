@@ -1,4 +1,5 @@
 
+
 import { state, scheduleTable } from "../../../app.js";
 import { DAY_NAMES } from "../../LoadFromBD/bd.js";
 import {
@@ -7,6 +8,7 @@ import {
   getDayType,
   isFullOffDay,
   getDaySlotFromDate,
+  isDateInCurrentWeek,
   getMaxPairs,
   getTimeSlots,
 } from "./dateUtils.js";
@@ -60,10 +62,12 @@ export function renderTeacherTable() {
     const date = new Date(state.weekStart);
     date.setDate(date.getDate() + dayIndex);
 
-    // День недели берём из фактической даты. Если число не попадает
-    // ни в один день недели (некорректная дата) — строка не отображается.
+    // День недели берём из фактической даты. Перебор идёт 7 позиций от
+    // начала недели; дата после воскресенья (понедельник следующей недели)
+    // или некорректная дата — строка такого дня не отображается.
     const daySlot = getDaySlotFromDate(date);
     if (daySlot === null) continue;
+    if (!isDateInCurrentWeek(date)) continue;
 
     // Красный день («Выходные дни») — полный выходной, исключаем из таблицы.
     if (isFullOffDay(date)) continue;

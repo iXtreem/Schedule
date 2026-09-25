@@ -1,5 +1,4 @@
 
-
 import { state } from "../../../app.js";
 import { getBellSchedules } from "../modals/bellStore.js";
 import { normalizeBellText } from "./bellUtils.js"; // ← новая зависимость
@@ -79,6 +78,33 @@ export function getDaySlotFromDate(date) {
   if (!(date instanceof Date) || !Number.isFinite(date.getTime())) return null;
   const dow = date.getDay(); // 0 = Вс, 1 = Пн, ..., 6 = Сб
   return dow === 0 ? 6 : dow - 1;
+}
+
+// Границы текущей недели: понедельник (weekStart) и воскресенье (weekEnd).
+// state.weekEnd заполняется в app.js из end_date недели; если бэкенд его
+// не вернул — считаем воскресеньём дату «понедельник + 6 дней».
+export function getWeekBounds() {
+  const start = new Date(state.weekStart);
+  if (!Number.isFinite(start.getTime())) return null;
+  const end =
+    state.weekEnd && Number.isFinite(new Date(state.weekEnd).getTime())
+      ? new Date(state.weekEnd)
+      : new Date(start.getTime() + 6 * 86400000);
+  return { start, end };
+}
+
+// Принадлежит ли дата текущей неделе (от понедельника weekStart до
+// воскресенья weekEnd включительно). Нужно потому, что таблица перебирает
+// 7 позиций от даты начала недели; когда неделя начинается не с понедельника
+// (например, срезанная первая/последняя неделя семестра), после воскресенья
+// в переборе идёт понедельник СЛЕДУЮЩЕЙ недели — его добавляем в таблицу,
+// т.к. это уже другая неделя. Дата вне диапазона -> false -> строка скрывается.
+export function isDateInCurrentWeek(date) {
+  const bounds = getWeekBounds();
+  if (!bounds) return false;
+  if (!(date instanceof Date) || !Number.isFinite(date.getTime())) return false;
+  const t = date.getTime();
+  return t >= bounds.start.getTime() && t <= bounds.end.getTime();
 }
 
 export function findLesson(weekId, groupId, dayOfWeek, timeSlot) {
