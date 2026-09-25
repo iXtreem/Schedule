@@ -1,5 +1,4 @@
 
-
 import { state, scheduleTable } from "../../../app.js";
 import { DAY_NAMES } from "../../LoadFromBD/bd.js";
 import {
