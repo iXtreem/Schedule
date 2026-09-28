@@ -156,6 +156,15 @@ export const api = {
       [],
     ),
 
+  // Преподаватели дисциплины для модалки занятия: [] — если план не задал
+  // единственного преподавателя (тогда фронт показывает справочник teacher).
+  planSubjectTeachers: (groupId, term, subjectId) =>
+    requestJson(
+      `${API}?entity=plan_subject_teachers&group_id=${groupId}&term=${term}&subject_id=${subjectId}`,
+      {},
+      [],
+    ),
+
   planLessonTypes: (groupId, term, subjectId, teacherId) =>
     requestJson(
       `${API}?entity=plan_lesson_types&group_id=${groupId}&term=${term}&subject_id=${subjectId}&teacher_id=${teacherId}`,

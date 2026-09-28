@@ -1370,3 +1370,54 @@ body.dict-modal-dragging {
   border-color: #e6a23c;
   background: #fdf6ec;
 }
+
+/* ===========================================================================
+   Подсветка преподавателя в модалке занятия по недельной нагрузке
+   (js/modules/modals/teacherLoadHint.js)
+   Зелёный — часов не больше лимита (teacher.max_hours), красный — превышение.
+   ========================================================================= */
+
+/* Выбор преподавателя: зелёная рамка, если нагрузка в пределах лимита */
+#teacherSelect.teacher-ok {
+  border-color: #16a34a !important;
+  background: #f0fdf4;
+  box-shadow: 0 0 0 2px rgba(22, 163, 74, 0.15);
+}
+
+/* Красная рамка, если часы сверх указанного количества */
+#teacherSelect.teacher-over {
+  border-color: #dc3545 !important;
+  background: #fef2f2;
+  box-shadow: 0 0 0 2px rgba(220, 53, 69, 0.15);
+}
+
+/* Поле с подсказкой позиционируем контекст (сама подсказка — fixed у курсора) */
+.field.teacher-field {
+  position: relative;
+}
+
+/* Маленькая подсказка у курсора о рабочих часах преподавателя */
+.teacher-load-hint {
+  position: fixed;
+  z-index: 3000;
+  max-width: 320px;
+  padding: 6px 10px;
+  border-radius: 8px;
+  font-size: 12px;
+  line-height: 1.35;
+  pointer-events: none;
+  background: #f0fdf4;
+  border: 1px solid #16a34a;
+  color: #14532d;
+  box-shadow: 0 4px 14px rgba(0, 0, 0, 0.12);
+}
+
+.teacher-load-hint.teacher-load-hint-over {
+  background: #fef2f2;
+  border-color: #dc3545;
+  color: #7f1d1d;
+}
+
+.teacher-load-hint.hidden {
+  display: none;
+}

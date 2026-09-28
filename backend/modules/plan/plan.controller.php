@@ -17,7 +17,16 @@ function planController($conn, $method, $entity) {
   if ($entity === 'plan_teachers') {
     $subjectId = (int)getQuery('subject_id', 0);
     if ($subjectId <= 0) errorJson('subject_id required', 400);
-    sendJson(repoPlanTeachers($conn, $groupId, $term, $subjectId));
+
+    // ИСПРАВЛЕНИЕ «пустого списка преподавателей» в окне добавления занятия:
+    // раньше список брались ТОЛЬКО из учебного плана (plan_hours). Если план
+    // на семестр ещё не заполнен (или дисциплину вели несколько препода-
+    // вателей), поле «Преподаватель» было пустым — в отличие от «Аудитории»,
+    // которая всегда грузится из справочника room.
+    // Теперь: план пуст -> показываем всех преподавателей из справочника.
+    $rows = repoPlanTeachers($conn, $groupId, $term, $subjectId);
+    if (!$rows) $rows = repoAllTeachers($conn);
+    sendJson($rows);
   }
 
   if ($entity === 'plan_lesson_types') {
@@ -40,8 +49,12 @@ function planController($conn, $method, $entity) {
     if ($subjectId <= 0) errorJson('subject_id required', 400);
     sendJson(repoPlanSubjectTeachers($conn, $groupId, $term, $subjectId));
   }
-    if ($entity === 'plan_teachers_base') {
-    sendJson(repoPlanTeachersBase($conn, $groupId, $term));
+  if ($entity === 'plan_teachers_base') {
+    // Тот же запасной вариант, что и для plan_teachers: если план группы
+    // пуст — показываем всех преподавателей из справочника teacher.
+    $rows = repoPlanTeachersBase($conn, $groupId, $term);
+    if (!$rows) $rows = repoAllTeachers($conn);
+    sendJson($rows);
   }
 
   if ($entity === 'plan_subjects_by_teacher') {

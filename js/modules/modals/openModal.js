@@ -3,6 +3,12 @@ import { api } from "../../LoadFromBD/api.js";
 import { DAY_NAMES } from "../../LoadFromBD/bd.js";
 import { renderTable } from "../schedule/renderTable.js";
 import { filterByName } from "./searchModal.js";
+// Подсветка преподавателя по недельной нагрузке (зелёный/красный + подсказка у курсора)
+import {
+  initTeacherLoadHint,
+  refreshTeacherLoad,
+  syncTeacherLoadHighlight,
+} from "./teacherLoadHint.js";
 
 const modalOverlay = document.getElementById("modalOverlay");
 const modalClose = document.getElementById("modalClose");
@@ -302,6 +308,9 @@ export function fillSelect(selectEl, list, placeholder = "— выбери —")
     opt.textContent = item.name;
     selectEl.appendChild(opt);
   }
+
+  // после перезаполнения списка пересчитываем подсветку нагрузки
+  if (selectEl === teacherSelect) syncTeacherLoadHighlight();
 }
 
 async function loadPlanSubjectsForModal(groupId) {
@@ -309,6 +318,31 @@ async function loadPlanSubjectsForModal(groupId) {
 
   modalSubjects = await api.planSubjects(groupId, term);
   fillSelect(subjectSelect, modalSubjects);
+}
+
+// Источник списка преподавателей для модалки занятия.
+// 1) plan_subject_teachers — преподаватель, закреплённый учебным планом
+//    за выбранной дисциплиной (если он там ровно один);
+// 2) если план молчит — весь справочник teacher из БД (?entity=teachers),
+//    чтобы поле «Преподаватель» никогда не оставалось пустым.
+async function fetchTeacherOptions(groupId, term, subjectId) {
+  if (subjectId) {
+    try {
+      const planned = await api.planSubjectTeachers(groupId, term, subjectId);
+      if (planned?.length) return planned;
+    } catch (e) {
+      console.error("plan_subject_teachers failed:", e);
+    }
+  }
+
+  try {
+    const all = await api.teachers();
+    if (all?.length) return all;
+  } catch (e) {
+    console.error("teachers dictionary failed:", e);
+  }
+
+  return [];
 }
 
 async function loadPlanTeachersForModal(groupId) {
@@ -320,10 +354,12 @@ async function loadPlanTeachersForModal(groupId) {
   modalTeachers = [];
   modalTypes = [];
 
-  if (!subjectId) return;
-
-  modalTeachers = await api.planTeachers(groupId, term, subjectId);
-  fillSelect(teacherSelect, modalTeachers);
+  modalTeachers = await fetchTeacherOptions(groupId, term, subjectId);
+  fillSelect(
+    teacherSelect,
+    modalTeachers,
+    "— выбери преподавателя —",
+  );
 }
 
 async function loadPlanTypesForModal(groupId) {
@@ -371,9 +407,13 @@ export async function openModal({ groupId, dayIndex, pairIndex, lessonId }) {
   saveLessonBtn.disabled = true;
   deleteLessonBtn.disabled = true;
 
+  // нагрузку преподавателей за неделю подгружаем параллельно со списками
+  const loadPromise = refreshTeacherLoad(state.currentWeekId);
+
   await loadModalBaseLists(groupId);
   await loadRoomPrefsForSelectedSubject();
   if (hoursSelect) hoursSelect.value = "2";
+  await loadPromise;
 
   if (lessonId) {
     const lesson = state.lessons.find((l) => Number(l.id) === Number(lessonId));
@@ -384,7 +424,7 @@ export async function openModal({ groupId, dayIndex, pairIndex, lessonId }) {
 
       // подгрузим преподавателей под этот предмет
       const term = Number(termInput.value) || 1;
-      modalTeachers = await api.planTeachers(
+      modalTeachers = await fetchTeacherOptions(
         groupId,
         term,
         Number(lesson.subjectId),
@@ -420,7 +460,9 @@ async function loadModalBaseLists(groupId) {
   const term = Number(termInput.value) || 1;
 
   baseSubjects = await api.planSubjects(groupId, term);
-  baseTeachers = await api.planTeachersBase(groupId, term);
+  // базовый список преподавателей — весь справочник teacher (переназначено
+  // с plan_teachers_base: при пустом/незаполненном плане поле было пустым)
+  baseTeachers = await api.teachers();
 
   modalSubjectsBase = [...baseSubjects];
   modalTeachersBase = [...baseTeachers];
@@ -573,9 +615,10 @@ subjectSelect.addEventListener("change", async () => {
   modalTypes = [];
   await loadRoomPrefsForSelectedSubject();
 
-  // если предмет сняли возвращаем базовых преподавателей
+  // предмет не выбран — показываем всех преподавателей из справочника
   if (!subjectId) {
-    fillSelect(teacherSelect, modalTeachersBase, "— выбери преподавателя —");
+    modalTeachers = [...modalTeachersBase];
+    fillSelect(teacherSelect, modalTeachers, "— выбери преподавателя —");
     // сохраняем выбранного преподавателя, если он ещё есть в базе (обычно да)
     const prevTeacher = teacherSelect.value;
     if (
@@ -590,10 +633,10 @@ subjectSelect.addEventListener("change", async () => {
     return;
   }
 
-  // предмет выбран  подгружаем преподавателей по предмету
+  // предмет выбран — преподаватели этого предмета (или все, если план не задан)
   const prevTeacher = teacherSelect.value;
 
-  modalTeachers = await api.planTeachers(groupId, term, subjectId);
+  modalTeachers = await fetchTeacherOptions(groupId, term, subjectId);
   fillSelect(teacherSelect, modalTeachers, "— выбери преподавателя —");
 
   if (
@@ -672,9 +715,17 @@ resetModalBtn.addEventListener("click", async () => {
   // вернём базовые списки
   await loadModalBaseLists(groupId);
   await loadRoomPrefsForSelectedSubject();
+  await refreshTeacherLoad(state.currentWeekId);
 });
 
 
 modalClose.addEventListener("click", closeModal);
 saveLessonBtn.addEventListener("click", saveLesson);
 deleteLessonBtn.addEventListener("click", deleteLesson);
+
+// инициализация подсветки нагрузки преподавателя (зелёный/красный + подсказка)
+initTeacherLoadHint({
+  teacherSelect,
+  hoursSelect,
+  hint: document.getElementById("teacherLoadHint"),
+});

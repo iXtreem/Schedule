@@ -27,6 +27,22 @@ function planTeacherNameSql() {
   return "CONCAT_WS(' ', TRIM(t.surname), TRIM(t.first_name), TRIM(t.patronymic))";
 }
 
+// Все живые преподаватели из справочника teacher — запасной вариант для
+// модалки занятия, когда учебный план (plan_hours) пуст или неоднозначен.
+// Так поле «Преподаватель» никогда не остаётся пустым (как и «Аудитория»).
+function repoAllTeachers($conn) {
+  return dbAll(
+    $conn,
+    "SELECT
+        id,
+        " . planTeacherNameSql() . " AS name,
+        COALESCE(max_hours, 36) AS max_hours
+     FROM teacher
+     WHERE is_deleted = 0
+     ORDER BY surname, first_name"
+  );
+}
+
 // Преподаватели по конкретной дисциплине в плане группы
 function repoPlanTeachers($conn, $groupId, $term, $subjectId) {
   return dbAll(
