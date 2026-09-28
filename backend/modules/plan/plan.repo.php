@@ -102,6 +102,15 @@ function repoPlanSubjectTeachers($conn, $groupId, $term, $subjectId) {
   return count($rows) === 1 ? $rows : [];
 }
 
+// Типы занятий, которые хоть где-то встречаются в плане (для сужения запаса)
+function repoPlanLessonTypeIdsUsed(mysqli $conn): array {
+  $rows = dbAll(
+    $conn,
+    "SELECT DISTINCT lesson_type_id AS id FROM plan_hours"
+  );
+  return array_map(static fn($r) => (int)$r['id'], $rows);
+}
+
 // Типы занятий по связке дисциплина+преподаватель с планом и выполнением часов
 function repoPlanLessonTypes($conn, $groupId, $term, $subjectId, $teacherId) {
   return dbAll(
