@@ -16,6 +16,14 @@ function teachersController($conn, $method) {
     return;
   }
 
+  // GET ?entity=teachers&load=week[&week_id=N] — недельная нагрузка
+  // преподавателей (для подсветки в модалке занятия: зелёный/красный).
+  if ($method === 'GET' && getQuery('load', '') === 'week') {
+    $weekId = (int)getQuery('week_id', 0);
+    sendJson(repoGetTeacherWeeklyLoad($conn, $weekId > 0 ? $weekId : null));
+    return;
+  }
+
   if ($method !== 'GET') errorJson('Method not allowed', 405);
   sendJson(repoGetTeachers($conn));
 }

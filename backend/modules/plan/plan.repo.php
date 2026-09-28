@@ -1,4 +1,3 @@
-
 <?php
 require_once __DIR__ . '/../../lib/db.php';
 
@@ -34,10 +33,11 @@ function repoPlanTeachers($conn, $groupId, $term, $subjectId) {
     $conn,
     "SELECT DISTINCT
         t.id AS id,
-        " . planTeacherNameSql() . " AS name
+        " . planTeacherNameSql() . " AS name,
+        COALESCE(t.max_hours, 36) AS max_hours
      FROM plan_hours p
      JOIN study_stream st ON st.id = p.stream_id AND st.is_deleted = 0
-     JOIN teacher t ON t.id = p.teacher_id
+     JOIN teacher t ON t.id = p.teacher_id AND t.is_deleted = 0
      WHERE st.group_id = ? AND p.term = ? AND p.discipline_id = ?
      ORDER BY name",
     [(int)$groupId, (int)$term, (int)$subjectId]
@@ -50,14 +50,40 @@ function repoPlanTeachersBase($conn, $groupId, $term) {
     $conn,
     "SELECT DISTINCT
         t.id AS id,
-        " . planTeacherNameSql() . " AS name
+        " . planTeacherNameSql() . " AS name,
+        COALESCE(t.max_hours, 36) AS max_hours
      FROM plan_hours p
      JOIN study_stream st ON st.id = p.stream_id AND st.is_deleted = 0
-     JOIN teacher t ON t.id = p.teacher_id
+     JOIN teacher t ON t.id = p.teacher_id AND t.is_deleted = 0
      WHERE st.group_id = ? AND p.term = ?
      ORDER BY name",
     [(int)$groupId, (int)$term]
   );
+}
+
+// ---------------------------------------------------------------------------
+// Преподаватели дисциплины — источник списка для модалки занятия.
+// Правило: если учебным планом (plan_hours) за дисциплиной группы закреплён
+// ровно один преподаватель — возвращаем его; иначе возвращаем пустой список,
+// и фронтенд подставляет всех преподавателей из справочника teacher
+// (?entity=teachers), чтобы поле «Преподаватель» никогда не было пустым.
+// ---------------------------------------------------------------------------
+function repoPlanSubjectTeachers($conn, $groupId, $term, $subjectId) {
+  $rows = dbAll(
+    $conn,
+    "SELECT DISTINCT
+        t.id AS id,
+        " . planTeacherNameSql() . " AS name,
+        COALESCE(t.max_hours, 36) AS max_hours
+     FROM plan_hours p
+     JOIN study_stream st ON st.id = p.stream_id AND st.is_deleted = 0
+     JOIN teacher t ON t.id = p.teacher_id AND t.is_deleted = 0
+     WHERE st.group_id = ? AND p.term = ? AND p.discipline_id = ?
+     ORDER BY name",
+    [(int)$groupId, (int)$term, (int)$subjectId]
+  );
+
+  return count($rows) === 1 ? $rows : [];
 }
 
 // Типы занятий по связке дисциплина+преподаватель с планом и выполнением часов

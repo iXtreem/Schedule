@@ -27,6 +27,19 @@ function planController($conn, $method, $entity) {
     sendJson(repoPlanLessonTypes($conn, $groupId, $term, $subjectId, $teacherId));
   }
 
+  if ($entity === 'plan_subject_teachers') {
+    $subjectId = (int)getQuery('subject_id', 0);
+    if ($subjectId <= 0) errorJson('subject_id required', 400);
+    sendJson(repoPlanSubjectTeachers($conn, $groupId, $term, $subjectId));
+  }
+
+  // Модалка занятия: преподаватели дисциплины.
+  // Пустой ответ = план не задан/неоднозначный — фронт покажет всех из teacher.
+  if ($entity === 'plan_subject_teachers') {
+    $subjectId = (int)getQuery('subject_id', 0);
+    if ($subjectId <= 0) errorJson('subject_id required', 400);
+    sendJson(repoPlanSubjectTeachers($conn, $groupId, $term, $subjectId));
+  }
     if ($entity === 'plan_teachers_base') {
     sendJson(repoPlanTeachersBase($conn, $groupId, $term));
   }

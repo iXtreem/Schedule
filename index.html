@@ -145,7 +145,7 @@
         </button>
         <!-- Окно настроек автозаполнения расписания (вкладки: преподаватели и др.) -->
         <button id="autoFillBtn" class="btn" type="button">
-            ⚡ Условия
+            ⚡ Автозаполнение
         </button>
         <button class="btn" type="button">
             Импорт плана
@@ -416,7 +416,7 @@
               <select id="subjectSelect" class="select"></select>
             </div>
 
-            <div class="field">
+            <div class="field teacher-field">
               <label class="label" for="teacherSearch"
                 >Поиск преподавателя</label
               >
@@ -428,6 +428,8 @@
               />
               <label class="label" for="teacherSelect">Преподаватель</label>
               <select id="teacherSelect" class="select"></select>
+              <!-- Подсказка у курсора о недельной нагрузке преподавателя -->
+              <div id="teacherLoadHint" class="teacher-load-hint hidden"></div>
             </div>
 
             <div class="field">

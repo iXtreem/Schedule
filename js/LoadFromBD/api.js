@@ -76,6 +76,14 @@ export const api = {
   weeks: () => requestJson(`${API}?entity=weeks`, {}, []),
   subjects: () => requestJson(`${API}?entity=subjects`, {}, []),
   teachers: () => requestJson(`${API}?entity=teachers`, {}, []),
+  // Недельная нагрузка преподавателей для подсветки в модалке занятия:
+  // [{ id, max_hours, week_hours }, ...] по выбранной (или актуальной) неделе.
+  teacherWeeklyLoad: (weekId) =>
+    requestJson(
+      `${API}?entity=teachers&load=week${weekId ? `&week_id=${Number(weekId)}` : ""}`,
+      {},
+      [],
+    ),
   // Сохранение лимитов часов преподавателей (окно «Автозаполнение»,
   // вкладка «Преподаватели»). items: [{ id, max_hours }]
   saveTeacherHours: (items) =>

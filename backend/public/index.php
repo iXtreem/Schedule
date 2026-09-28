@@ -1,4 +1,3 @@
-
 <?php
 require_once __DIR__ . '/../config/session.php';
 require_once __DIR__ . '/../config/headers.php';
@@ -102,6 +101,7 @@ try {
 
 
     case 'plan_subjects':
+    case 'plan_subject_teachers':
     case 'plan_teachers':
     case 'plan_lesson_types':
     case 'plan_teachers_base':
