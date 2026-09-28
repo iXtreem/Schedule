@@ -1,4 +1,3 @@
-
 * {
   box-sizing: border-box;
 }
@@ -1330,4 +1329,44 @@ body.dict-modal-dragging {
 .lt-hint {
   font-size: 12px;
   margin-top: 6px;
+}
+
+/* ==========================================================================
+   Окно «Автозаполнение расписания» (js/modules/modals/autoFillModal.js)
+   ========================================================================== */
+.autofill-modal .modal-body {
+  max-height: 65vh;
+  overflow-y: auto;
+}
+
+.autofill-toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 10px;
+}
+
+.autofill-toolbar #autoFillTeacherSearch {
+  flex: 1 1 220px;
+  min-width: 200px;
+}
+
+.autofill-set-hours {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 14px;
+  color: #333;
+}
+
+.autofill-hours-input {
+  width: 90px;
+  padding: 4px 8px;
+}
+
+/* Подсветка несохранённо изменённого значения часов */
+.autofill-hours-input.is-edited {
+  border-color: #e6a23c;
+  background: #fdf6ec;
 }

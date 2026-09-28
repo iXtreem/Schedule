@@ -1,4 +1,3 @@
-
 import renderWeekSelect from "./js/modules/weeks/renderWeekSelect.js";
 import {
   renderGroups,
@@ -15,6 +14,8 @@ import {
 } from "./js/modules/modals/openModal.js";
 import { initRoomPrefsModal } from "./js/modules/modals/roomPrefsModal.js";
 import { initDictModal } from "./js/modules/modals/dictModal.js";
+// Модальное окно «Автозаполнение» (вкладки требований для генерации расписания)
+import { initAutoFillModal } from "./js/modules/modals/autoFillModal.js";
 import { ensureBellLoaded, setBellSchedules } from "./js/modules/modals/bellStore.js";
 import { filterByName } from "./js/modules/modals/searchModal.js";
 
@@ -263,6 +264,8 @@ async function init() {
   // «Закрепление кабинета» и т.п. остаются без обработчиков («ничего не происходит»).
   initRoomPrefsModal();
   initDictModal();
+  // Кнопка «⚡ Автозаполнение» — привязываем сразу, до обращений к серверу.
+  initAutoFillModal();
   // Кнопка «⚡ Семестр» (автосоздание недель) — тоже привязываем сразу,
   // до любых обращений к серверу.
   initGenerateWeeks();

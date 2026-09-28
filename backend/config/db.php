@@ -31,7 +31,43 @@ function getDBConnection() {
   // Полная кириллица без потерь
   $conn->set_charset("utf8mb4");
 
+  // Авто-синхронизация схемы: если программа открыта с базой, созданной по
+  // более старой версии schema.sql, недостающие колонки добавляются сами.
+  // (Новая база создаётся из schema.sql, где эти колонки уже есть.)
+  dbAutoMigrate($conn);
+
   return $conn;
+}
+
+/*
+ * Простейшие безопасные миграции «на лету» (идемпотентны):
+ * проверяют information_schema и добавляют отсутствующие колонки.
+ * Список сверяется с База данных/schema.sql — при каждом изменении
+ * схемы сюда добавляется соответствующее правило.
+ */
+function dbColumnExists(mysqli $conn, string $table, string $column): bool {
+  $stmt = $conn->prepare(
+    "SELECT COUNT(*) AS c FROM information_schema.COLUMNS
+      WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = ? AND COLUMN_NAME = ?"
+  );
+  $stmt->bind_param('ss', $table, $column);
+  $stmt->execute();
+  $row = $stmt->get_result()->fetch_assoc();
+  $stmt->close();
+  return (int)($row['c'] ?? 0) > 0;
+}
+
+function dbAutoMigrate(mysqli $conn) {
+  // teacher.max_hours — макс. часов преподавателя в неделю (по умолчанию 36).
+  // Используется окном «Автозаполнение» (вкладка «Преподаватели»)
+  // и будущим генератором расписания как ограничение нагрузки.
+  if (!dbColumnExists($conn, 'teacher', 'max_hours')) {
+    $conn->query(
+      "ALTER TABLE teacher
+         ADD COLUMN max_hours DECIMAL(5,1) NOT NULL DEFAULT 36.0
+         AFTER patronymic"
+    );
+  }
 }
 
 function dbClose($conn) {

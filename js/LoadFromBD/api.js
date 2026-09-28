@@ -1,5 +1,3 @@
-
-
 const API = new URL(
   "./backend/public/index.php",
   window.location.href,
@@ -78,6 +76,20 @@ export const api = {
   weeks: () => requestJson(`${API}?entity=weeks`, {}, []),
   subjects: () => requestJson(`${API}?entity=subjects`, {}, []),
   teachers: () => requestJson(`${API}?entity=teachers`, {}, []),
+  // Сохранение лимитов часов преподавателей (окно «Автозаполнение»,
+  // вкладка «Преподаватели»). items: [{ id, max_hours }]
+  saveTeacherHours: (items) =>
+    requestJson(`${API}?entity=teachers`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        items: (Array.isArray(items) ? items : []).map((x) => ({
+          id: Number(x?.id),
+          max_hours: x?.max_hours,
+        })),
+      }),
+      throwOnError: true,
+    }),
   rooms: () => requestJson(`${API}?entity=rooms`, {}, []),
   lessonTypes: () => requestJson(`${API}?entity=lesson_types`, {}, []),
 
