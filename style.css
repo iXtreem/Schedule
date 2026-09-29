@@ -304,8 +304,15 @@ table#scheduleTable td {
 #modalOverlay,
 #weekModalOverlay,
 #exportBuilderOverlay,
-#roomPrefsModalOverlay {
+#roomPrefsModalOverlay,
+#teacherDiscOverlay {
   isolation: isolate;
+}
+
+/* Окно «Дисциплины преподавателя» открывается поверх окна
+   «⚡ Условия заполнения расписания» (его overlay имеет z-index 1000) */
+#teacherDiscOverlay {
+  z-index: 1200;
 }
 
 .modal {
@@ -1494,4 +1501,126 @@ body.dict-modal-dragging {
 
 .teacher-load-hint.hidden {
   display: none;
+}
+/* ==========================================================================
+   Окно «Дисциплины преподавателя» (js/modules/modals/teacherDisciplinesModal.js)
+   Отдельная модалка вместо попапа в углу экрана: заголовок, поиск, счётчик,
+   массовые кнопки и список чекбоксов с подсветкой выбранных строк.
+   ========================================================================== */
+.teacher-disc-modal {
+  width: 640px;
+}
+
+.teacher-disc-modal .modal-body {
+  max-height: 62vh;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.teacher-disc-toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+
+.teacher-disc-toolbar #teacherDiscSearch {
+  flex: 1 1 200px;
+  min-width: 180px;
+}
+
+.teacher-disc-list-wrap {
+  border: 1px solid #e5e7eb;
+  border-radius: 8px;
+  background: #fafbfc;
+}
+
+.teacher-disc-list {
+  display: flex;
+  flex-direction: column;
+  max-height: 340px;
+  overflow-y: auto;
+  padding: 4px;
+}
+
+.teacher-disc-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 7px 10px;
+  border-radius: 6px;
+  cursor: pointer;
+  user-select: none;
+  font-size: 14px;
+  border-bottom: 1px dashed #eceff1;
+}
+
+.teacher-disc-item:last-child {
+  border-bottom: none;
+}
+
+.teacher-disc-item:hover {
+  background: #eef2f7;
+}
+
+/* Отмеченная дисциплина — зелёная подсветка строки целиком */
+.teacher-disc-item.is-on {
+  background: #ecfdf5;
+  box-shadow: inset 0 0 0 1px #a7f3d0;
+}
+
+.teacher-disc-item input[type="checkbox"] {
+  width: 16px;
+  height: 16px;
+  accent-color: #16a34a;
+  flex: 0 0 auto;
+  cursor: pointer;
+}
+
+.teacher-disc-name {
+  flex: 1 1 auto;
+}
+
+.teacher-disc-short {
+  font-size: 12px;
+  white-space: nowrap;
+}
+
+.teacher-disc-empty {
+  padding: 14px;
+  text-align: center;
+}
+
+/* Кнопка-счётчик «Дисциплины: …» в таблице окна «⚡ Условия заполнения» */
+.autofill-disc-btn {
+  max-width: 160px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 13px;
+}
+
+/* «none» — преподаватель не ведёт ни одну дисциплину (по умолчанию) */
+.autofill-disc-btn.autofill-disc-none {
+  border-color: #dc3545;
+  color: #b91c1c;
+  background: #fef2f2;
+}
+
+/* Отметка «ведёт / не ведёт дисциплину» под списком преподавателей
+   в модалке занятия (js/modules/modals/teachersLoadHint.js) */
+.teacher-disc-flag {
+  font-size: 12px;
+  margin-top: 4px;
+}
+
+.teacher-disc-flag.ok {
+  color: #166534;
+}
+
+.teacher-disc-flag.bad {
+  color: #b91c1c;
+  font-weight: 600;
 }

@@ -14,6 +14,7 @@
 // отдельными небольшими модулями.
 import { state } from "../../../app.js";
 import { api } from "../../LoadFromBD/api.js";
+import { openTeacherDisciplinesModal } from "./teacherDisciplinesModal.js";
 
 const DEFAULT_MAX_HOURS = 36; // значение по умолчанию для всех преподавателей
 
@@ -40,9 +41,9 @@ let activeTab = "teachers";
 // Пока поля нет — используется то, что пришло из БД (или значения по умолчанию).
 let scheduleEdits = {};
 
-// Права на редактирование дисциплин (кнопка «Дисциплины»): пока попап открыт,
-// чекбоксы пишутся прямо в scheduleEdits[id].discipline_ids.
-let discPopupTeacherId = null;
+// Права на редактирование дисциплин (кнопка «Дисциплины»): чекбоксы окна
+// «Дисциплины преподавателя» пишутся прямо в scheduleEdits[id].discipline_ids
+// (см. openDiscWindow / teacherDisciplinesModal.js).
 
 const TABS = [
   { key: "teachers", title: "Преподаватели" },
@@ -284,6 +285,8 @@ function switchTab(key) {
 // ничего. Если в модалке занятия выбрана дисциплина, которой нет у препода-
 // вателя, — option подсвечивается красным с подсказкой «не ведёт дисциплину»
 // (js/modules/schedule/teacherSchedule.js).
+// Выбор открывается отдельным красивым модальным окном
+// (js/modules/modals/teacherDisciplinesModal.js), а не попапом в углу экрана.
 
 function subjectNameById(id) {
   const s = (state.subjects || []).find((x) => Number(x.id) === Number(id));
@@ -300,7 +303,7 @@ function renderDiscCell(t) {
     : "Дисциплины: none";
   const title = allowed.length
     ? `Ведёт: ${allowed.map(subjectNameById).join(", ")}. Нажми, чтобы изменить.`
-    : "Ни один предмет не включён — преподаватель «не ведёт» ни одну дисциплину. Нажми и отметьте нужные.";
+    : "Ни один предмет не включён — преподаватель «не ведёт» ни одну дисциплину. Нажми и отметь нужные.";
   return `
     <button type="button"
             class="btn btn-outline autofill-disc-btn ${allowed.length ? "" : "autofill-disc-none"} ${edited ? "is-edited" : ""}"
@@ -309,109 +312,30 @@ function renderDiscCell(t) {
   `;
 }
 
-function discPopupEl() {
-  let el = document.getElementById("autoFillDiscPopup");
-  if (!el) {
-    el = document.createElement("div");
-    el.id = "autoFillDiscPopup";
-    el.className = "autofill-disc-popup hidden";
-    document.body.appendChild(el);
-  }
-  return el;
+// Обновление кнопки-счётчика в строке таблицы без перерисовки всей таблицы
+function refreshDiscBtn(teacherId) {
+  const id = Number(teacherId);
+  const btn = tableEl?.querySelector(`[data-disc-open="${id}"]`);
+  if (!btn) return;
+  const teacher = (state.teachers || []).find((t) => Number(t.id) === id);
+  if (teacher) btn.outerHTML = renderDiscCell(teacher);
 }
 
-function closeDiscPopup() {
-  discPopupTeacherId = null;
-  const el = discPopupEl();
-  el.classList.add("hidden");
-  el.innerHTML = "";
-}
-
-function openDiscPopup(teacherId, anchorBtn) {
-  const teacher = (state.teachers || []).find(
-    (t) => Number(t.id) === Number(teacherId),
-  );
-  if (!teacher) return;
-  discPopupTeacherId = Number(teacherId);
-
-  const allowed = new Set(getAllowedDisc(teacher));
-  const subjects = [...(state.subjects || [])].sort((a, b) =>
-    String(a.name || "").localeCompare(String(b.name || ""), "ru"),
-  );
-
-  const items = subjects.length
-    ? subjects
-        .map(
-          (s) => `
-        <label class="autofill-disc-item">
-          <input type="checkbox" data-disc-id="${Number(s.id)}"
-                 data-disc-name="${escapeHtml(String(s.name || s.short_name || "").toLowerCase())}"
-                 ${allowed.has(Number(s.id)) ? "checked" : ""} />
-          <span>${escapeHtml(s.name || s.short_name || "")}</span>
-        </label>`,
-        )
-        .join("")
-    : `<div class="muted">Список дисциплин пуст — добавьте дисциплины в справочнике.</div>`;
-
-  const el = discPopupEl();
-  el.innerHTML = `
-    <div class="autofill-disc-head">
-      <b>${escapeHtml(teacher.name || "")}</b> — какие дисциплины ведёт
-      <button type="button" class="autofill-disc-close" title="Закрыть">×</button>
-    </div>
-    <div class="autofill-disc-hint muted">
-      По умолчанию все предметы выключены: преподаватель «не ведёт» ничего.
-      Отметьте нужные дисциплины — остальные в расписании подсветятся красным
-      с подсказкой «не ведёт дисциплину».
-    </div>
-    <input type="search" class="autofill-disc-search" placeholder="Поиск дисциплины…" />
-    <div class="autofill-disc-list">${items}</div>
-    <div class="autofill-disc-actions">
-      <button type="button" class="btn btn-outline" data-disc-clear>Снять все</button>
-      <button type="button" class="btn btn-outline" data-disc-all>Отметить все</button>
-    </div>
-  `;
-  el.classList.remove("hidden");
-
-  // Поиск по названию дисциплины внутри попапа
-  const searchEl = el.querySelector(".autofill-disc-search");
-  searchEl?.addEventListener("input", () => {
-    const q = String(searchEl.value || "").trim().toLowerCase();
-    for (const label of el.querySelectorAll(".autofill-disc-item")) {
-      const cb = label.querySelector("input[data-disc-id]");
-      const name = String(cb?.dataset.discName || "");
-      label.style.display = !q || name.includes(q) ? "" : "none";
-    }
+// Открытие окна «Дисциплины преподавателя»: текущие несохранённые правки
+// (scheduleEdits) передаются как исходный набор, а сохранение сразу пишет их
+// обратно в scheduleEdits — кнопка-счётчик обновляется мгновенно, а общий
+// «Сохранить» окна «Условия заполнения» синхронизирует всё с БД.
+function openDiscWindow(teacherId) {
+  const id = Number(teacherId);
+  openTeacherDisciplinesModal(id, {
+    onPick: (tid) => scheduleEdits[Number(tid)]?.discipline_ids,
+    onSave: (tid, ids) => {
+      const edit = scheduleEdits[tid] || (scheduleEdits[tid] = {});
+      edit.discipline_ids = [...ids];
+      setStatus("Есть несохранённые изменения.");
+      refreshDiscBtn(tid);
+    },
   });
-
-  // Позиционируем рядом с кнопкой
-  const r = anchorBtn.getBoundingClientRect();
-  const w = 340;
-  let left = Math.min(r.left, window.innerWidth - w - 12);
-  left = Math.max(8, left);
-  el.style.left = `${left}px`;
-  el.style.top = `${Math.min(r.bottom + 6, window.innerHeight - 240)}px`;
-  el.style.width = `${w}px`;
-}
-
-function syncDiscEditFromPopup() {
-  if (discPopupTeacherId == null) return;
-  const el = discPopupEl();
-  const ids = [...el.querySelectorAll("input[data-disc-id]")]
-    .filter((c) => c.checked)
-    .map((c) => Number(c.dataset.discId))
-    .filter((v) => Number.isFinite(v) && v > 0);
-  const edit = scheduleEdits[discPopupTeacherId] || (scheduleEdits[discPopupTeacherId] = {});
-  edit.discipline_ids = ids;
-  setStatus("Есть несохранённые изменения.");
-  // Обновляем кнопку-счётчик в строке, не перерисовывая всю таблицу
-  const total = (state.subjects || []).length;
-  const btn = tableEl?.querySelector(`[data-disc-open="${discPopupTeacherId}"]`);
-  if (btn) {
-    btn.textContent = ids.length ? `Дисциплины: ${ids.length} из ${total}` : "Дисциплины: none";
-    btn.classList.toggle("autofill-disc-none", !ids.length);
-    btn.classList.add("is-edited");
-  }
 }
 
 async function refreshTeachersFromDb() {
@@ -454,7 +378,6 @@ async function save() {
     if (items.length) await api.saveTeacherHours(items);
     if (discItems.length) await api.saveTeacherDisciplines(discItems);
     scheduleEdits = {}; // все правки записаны в БД
-    closeDiscPopup();
     await refreshTeachersFromDb();
     renderTeacherTable();
     setStatus(
@@ -533,7 +456,6 @@ function bindOnce() {
 
   openBtn?.addEventListener("click", openAutoFillModal);
   closeBtn?.addEventListener("click", () => {
-    closeDiscPopup();
     closeAutoFillModal();
   });
   saveBtn?.addEventListener("click", save);
@@ -577,40 +499,13 @@ function bindOnce() {
     setStatus("Есть несохранённые изменения.");
   });
 
-  // Массовые операции над дисциплинами (попап «Дисциплины»): открытие,
-  // чекбоксы, «Снять все» / «Отметить все», закрытие. Без этих обработчиков
-  // кнопка «Дисциплины: none» ничего не делала.
+  // Кнопка «Дисциплины: …» открывает отдельное модальное окно выбора
+  // дисциплин преподавателя (teacherDisciplinesModal.js) — раньше был
+  // маленьким попапом, который появлялся в углу экрана без стилей.
   tableEl?.addEventListener("click", (e) => {
     const btn = e.target.closest("[data-disc-open]");
     if (!btn) return;
-    const id = Number(btn.dataset.discOpen);
-    if (discPopupTeacherId === id && !discPopupEl().classList.contains("hidden")) {
-      closeDiscPopup();
-      return;
-    }
-    openDiscPopup(id, btn);
-  });
-
-  const discPopup = discPopupEl();
-
-  discPopup.addEventListener("change", (e) => {
-    if (e.target.closest("input[data-disc-id]")) syncDiscEditFromPopup();
-  });
-
-  discPopup.addEventListener("click", (e) => {
-    if (e.target.closest(".autofill-disc-close")) {
-      closeDiscPopup();
-      return;
-    }
-    const clear = e.target.closest("[data-disc-clear]");
-    const all = e.target.closest("[data-disc-all]");
-    if (!clear && !all) return;
-    for (const cb of discPopup.querySelectorAll("input[data-disc-id]")) {
-      // «Отметить все» включает только видимые (не отфильтрованные поиском)
-      if (all && cb.closest(".autofill-disc-item")?.style.display === "none") continue;
-      cb.checked = Boolean(all);
-    }
-    syncDiscEditFromPopup();
+    openDiscWindow(Number(btn.dataset.discOpen));
   });
 
   overlay?.addEventListener("mousedown", (e) => {
