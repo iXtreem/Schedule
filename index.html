@@ -662,8 +662,69 @@
       </div>
     </div>
 
+    <!-- Модалка: дисциплины преподавателя (кнопка «Дисциплины» во вкладке
+         «Преподаватели» окна «⚡ Условия заполнения расписания»).
+         Таблица teacher_discipline. По умолчанию ни одна дисциплина не
+         включена — преподаватель «не ведёт» ничего; остальные в расписании
+         подсветятся красным с подсказкой «не ведёт дисциплину». -->
+    <div id="teacherDiscOverlay" class="modal-overlay hidden">
+      <div class="modal dict-modal teacher-disc-modal" id="teacherDiscBox">
+        <div class="modal-header">
+          <div>
+            <h2 class="modal-title">Дисциплины преподавателя</h2>
+            <div class="modal-subtitle" id="teacherDiscSubtitle"></div>
+          </div>
+          <button
+            id="teacherDiscClose"
+            class="icon-btn"
+            aria-label="Закрыть"
+            type="button"
+          >
+            ✕
+          </button>
+        </div>
+
+        <div class="modal-body">
+          <div class="hint">
+            По умолчанию все предметы выключены: преподаватель «не ведёт» ни
+            одну дисциплину. Отметьте нужные — остальные в окне выбора
+            преподавателя для занятия подсветятся красным с подсказкой «не
+            ведёт дисциплину». Изменения применяются кнопкой «Сохранить».
+          </div>
+
+          <div class="teacher-disc-toolbar">
+            <input
+              id="teacherDiscSearch"
+              class="select"
+              placeholder="Поиск дисциплины"
+              autocomplete="off"
+            />
+            <span id="teacherDiscCount" class="muted"></span>
+            <button id="teacherDiscAllBtn" class="btn btn-outline" type="button">
+              Отметить все
+            </button>
+            <button id="teacherDiscNoneBtn" class="btn btn-outline" type="button">
+              Снять все
+            </button>
+          </div>
+
+          <div class="dict-table-wrap teacher-disc-list-wrap">
+            <div id="teacherDiscList" class="teacher-disc-list"></div>
+          </div>
+        </div>
+
+        <div class="modal-footer">
+          <span id="teacherDiscStatus" class="muted"></span>
+          <button id="teacherDiscCancelBtn" class="btn" type="button">
+            Отмена
+          </button>
+          <button id="teacherDiscSaveBtn" class="btn btn-primary" type="button">
+            Сохранить
+          </button>
+        </div>
+      </div>
+    </div>
+
     <script type="module" src="app.js"></script>
   </body>
-  <button class="btn">Отправить</button>
-
 </html>

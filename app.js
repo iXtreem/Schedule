@@ -16,6 +16,8 @@ import { initRoomPrefsModal } from "./js/modules/modals/roomPrefsModal.js";
 import { initDictModal } from "./js/modules/modals/dictModal.js";
 // Модальное окно «Автозаполнение» (вкладки требований для генерации расписания)
 import { initAutoFillModal } from "./js/modules/modals/autoFillModal.js";
+// Окно «Дисциплины преподавателя» (кнопка «Дисциплины» во вкладке преподавателей)
+import { initTeacherDisciplinesModal } from "./js/modules/modals/teacherDisciplinesModal.js";
 import { ensureBellLoaded, setBellSchedules } from "./js/modules/modals/bellStore.js";
 import { filterByName } from "./js/modules/modals/searchModal.js";
 
@@ -266,6 +268,8 @@ async function init() {
   initDictModal();
   // Кнопка «⚡ Автозаполнение» — привязываем сразу, до обращений к серверу.
   initAutoFillModal();
+  // Обработчики окна «Дисциплины преподавателя» — тоже сразу.
+  initTeacherDisciplinesModal();
   // Кнопка «⚡ Семестр» (автосоздание недель) — тоже привязываем сразу,
   // до любых обращений к серверу.
   initGenerateWeeks();
