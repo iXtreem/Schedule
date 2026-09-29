@@ -84,17 +84,24 @@ export const api = {
       {},
       [],
     ),
-  // Сохранение лимитов часов преподавателей (окно «Автозаполнение»,
-  // вкладка «Преподаватели»). items: [{ id, max_hours }]
+  // Сохранение лимитов часов и графика работы преподавателей (окно
+  // «Автозаполнение», вкладка «Преподаватели»).
+  // items: [{ id, max_hours?, working_days?, work_start?, work_end? }]
+  // working_days — строка из 7 символов '0'/'1' (Пн..Вс),
+  // work_start / work_end — "HH:MM" или "" (без ограничения).
   saveTeacherHours: (items) =>
     requestJson(`${API}?entity=teachers`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
-        items: (Array.isArray(items) ? items : []).map((x) => ({
-          id: Number(x?.id),
-          max_hours: x?.max_hours,
-        })),
+        items: (Array.isArray(items) ? items : []).map((x) => {
+          const item = { id: Number(x?.id) };
+          if (x?.max_hours !== undefined) item.max_hours = x.max_hours;
+          if (x?.working_days !== undefined) item.working_days = x.working_days;
+          if (x?.work_start !== undefined) item.work_start = x.work_start;
+          if (x?.work_end !== undefined) item.work_end = x.work_end;
+          return item;
+        }),
       }),
       throwOnError: true,
     }),

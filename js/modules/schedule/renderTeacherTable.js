@@ -1,6 +1,7 @@
 
 import { state, scheduleTable } from "../../../app.js";
 import { DAY_NAMES } from "../../LoadFromBD/bd.js";
+import { checkTeacherSchedule, scheduleProblemText } from "./teacherSchedule.js";
 import {
   formatDateForDisplay,
   formatDateForInput,
@@ -101,7 +102,21 @@ export function renderTeacherTable() {
         const lesson = lessonsBySlot.get(
           slotKey(Number(teacher.id), dayOfWeek, timeSlot),
         );
-        html += `<td class="teacher-cell">${renderTeacherLessonCell(lesson, subjectMap, groupMap, roomMap, typeMap)}</td>`;
+
+        // Проверка графика работы преподавателя (окно «⚡ Условия заполнения»):
+        // если занятие попало в нерабочий день или вне рабочего времени —
+        // помечаем ячейку красным и показываем подсказку.
+        const schedRes = lesson
+          ? checkTeacherSchedule(teacher.id, dayOfWeek, timeSlot, date)
+          : null;
+        const schedWarn =
+          schedRes && !schedRes.ok
+            ? scheduleProblemText(String(teacher.name || ""), schedRes)
+            : "";
+
+        html += `<td class="teacher-cell ${schedWarn ? "teacher-cell-schedule-warn" : ""}"${
+          schedWarn ? ` title="${escapeHtml(schedWarn)}"` : ""
+        }>${renderTeacherLessonCell(lesson, subjectMap, groupMap, roomMap, typeMap)}</td>`;
       }
 
       html += "</tr>";

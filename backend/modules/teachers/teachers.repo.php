@@ -5,6 +5,8 @@ require_once __DIR__ . '/../../lib/db.php';
 // ФИО собирается в одно поле name через CONCAT_WS
 // max_hours — максимальная недельная нагрузка (по умолчанию 36, см. schema.sql);
 // используется окном «Автозаполнение» и будущим генератором расписания.
+// Рабочие дни/часы по умолчанию: '1111111' — работает все дни (Пн..Вс),
+// work_start/work_end = NULL — время не ограничено.
 function repoGetTeachers($conn) {
   return dbAll(
     $conn,
@@ -15,35 +17,79 @@ function repoGetTeachers($conn) {
           TRIM(first_name),
           TRIM(patronymic)
         ) AS name,
-        COALESCE(max_hours, 36) AS max_hours
+        COALESCE(max_hours, 36) AS max_hours,
+        COALESCE(working_days, '1111111') AS working_days,
+        work_start,
+        work_end
      FROM teacher
      WHERE is_deleted = 0
      ORDER BY surname, first_name"
   );
 }
 
-// Сохранение лимитов часов: массив { id, max_hours }.
-// Возвращает число обновлённых записей.
+// Сохранение лимитов часов и графика работы: массив
+//   { id, max_hours?, working_days?, work_start?, work_end? }.
+// Поля, которых нет в элементе, не меняются. Возвращает число обновлённых записей.
 function repoSaveTeacherHours($conn, array $items) {
   $updated = 0;
   foreach ($items as $item) {
     $id = (int)($item['id'] ?? 0);
     if ($id <= 0) continue;
 
-    $hours = $item['max_hours'] ?? null;
-    $hours = ($hours === '' || $hours === null) ? 36 : (float)$hours;
-    if ($hours < 0)   $hours = 0;
-    if ($hours > 999) $hours = 999;
+    // Собираем только те поля, которые реально прислали —
+    // partial update (старые клиенты шлют только max_hours).
+    $sets  = [];
+    $params = [];
+    $types  = '';
 
-    // DECIMAL(5,1): храним с точностью до десятых
-    $hours = round($hours * 10) / 10;
+    if (array_key_exists('max_hours', $item)) {
+      $hours = $item['max_hours'];
+      $hours = ($hours === '' || $hours === null) ? 36 : (float)$hours;
+      if ($hours < 0)   $hours = 0;
+      if ($hours > 999) $hours = 999;
+      // DECIMAL(5,1): храним с точностью до десятых
+      $hours = round($hours * 10) / 10;
+      $sets[]  = 'max_hours = ?';
+      $params[] = $hours;
+      $types   .= 'd';
+    }
 
-    $aff = dbExec(
-      $conn,
-      "UPDATE teacher SET max_hours = ? WHERE id = ? AND is_deleted = 0",
-      [$hours, $id]
+    if (array_key_exists('working_days', $item)) {
+      $days = preg_replace('/[^01]/', '', (string)($item['working_days'] ?? ''));
+      $days = substr(str_pad($days, 7, '1'), 0, 7); // Пн..Вс, недостающее = рабочий
+      $sets[]  = 'working_days = ?';
+      $params[] = $days;
+      $types   .= 's';
+    }
+
+    // work_start / work_end: '' или null → NULL (без ограничения по времени)
+    foreach (['work_start', 'work_end'] as $col) {
+      if (!array_key_exists($col, $item)) continue;
+      $v = trim((string)($item[$col] ?? ''));
+      $valid = preg_match('/^(\d{1,2}):(\d{2})(:\d{2})?$/', $v);
+      if ($v === '' || !$valid) {
+        $sets[]  = "$col = NULL";
+      } else {
+        if (strlen($v) === 5) $v .= ':00';
+        $sets[]  = "$col = ?";
+        $params[] = $v;
+        $types   .= 's';
+      }
+    }
+
+    if (!$sets) continue;
+
+    $params[] = $id;
+    $types   .= 'i';
+
+    $stmt = $conn->prepare(
+      'UPDATE teacher SET ' . implode(', ', $sets) .
+      ' WHERE id = ? AND is_deleted = 0'
     );
-    $updated += $aff;
+    $stmt->bind_param($types, ...$params);
+    $stmt->execute();
+    $updated += $stmt->affected_rows;
+    $stmt->close();
   }
   return $updated;
 }

@@ -58,11 +58,17 @@ CREATE TABLE IF NOT EXISTS discipline (
 
 -- Преподаватели -------------------------------------------------------
 CREATE TABLE IF NOT EXISTS teacher (
-  id         INT NOT NULL AUTO_INCREMENT PRIMARY KEY,
-  surname    VARCHAR(80) NULL,                 -- фамилия
-  first_name VARCHAR(80) NULL,                 -- имя
-  patronymic VARCHAR(80) NULL,                 -- отчество
-  is_deleted TINYINT(1) NOT NULL DEFAULT 0,
+  id           INT NOT NULL AUTO_INCREMENT PRIMARY KEY,
+  surname      VARCHAR(80) NULL,                -- фамилия
+  first_name   VARCHAR(80) NULL,                -- имя
+  patronymic   VARCHAR(80) NULL,                -- отчество
+  max_hours    DECIMAL(5,1) NOT NULL DEFAULT 36.0, -- макс. часов в неделю (окно «Автозаполнение»)
+  working_days CHAR(7)     NOT NULL DEFAULT '1111111',
+      -- рабочие дни преподавателя: 7 символов, Пн..Вс;
+      -- '1' — может работать, '0' — не работает (по умолчанию работает всегда)
+  work_start   TIME        NULL,                -- начало рабочего дня («со скольки»)
+  work_end     TIME        NULL,                -- конец рабочего дня («до скольки»)
+  is_deleted   TINYINT(1)  NOT NULL DEFAULT 0,
   KEY idx_teacher_surname (surname)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
