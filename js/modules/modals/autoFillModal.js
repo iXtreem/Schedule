@@ -122,8 +122,9 @@ function getWorkEnd(teacher) {
   return normTime(teacher.work_end);
 }
 
-// Разрешённые дисциплины преподавателя: список id. Пустой список = ограничений
-// нет (может вести любую дисциплину). Таблица teacher_discipline.
+// Разрешённые дисциплины преподавателя: список id. По умолчанию список пуст —
+// преподаватель НЕ ведёт ни одну дисциплину («Дисциплины: none»); предметы
+// включаются чекбоксами в попапе кнопки «Дисциплины». Таблица teacher_discipline.
 function getAllowedDisc(teacher) {
   const id = Number(teacher.id);
   if (Array.isArray(scheduleEdits[id]?.discipline_ids))
@@ -279,26 +280,30 @@ function switchTab(key) {
 }
 
 // --- Дисциплины преподавателя (таблица teacher_discipline) -------------------
-// Пустой список = ограничений нет (преподаватель может вести любую
-// дисциплину). Если список НЕ пуст и дисциплины в нём нет — занятие будет
-// помечено красным с подсказкой (js/modules/schedule/teacherSchedule.js).
+// По умолчанию НИ ОДНА дисциплина не включена: преподаватель «не ведёт»
+// ничего. Если в модалке занятия выбрана дисциплина, которой нет у препода-
+// вателя, — option подсвечивается красным с подсказкой «не ведёт дисциплину»
+// (js/modules/schedule/teacherSchedule.js).
 
 function subjectNameById(id) {
   const s = (state.subjects || []).find((x) => Number(x.id) === Number(id));
   return String(s?.name || s?.short_name || `№${id}`);
 }
 
-// Кнопка-счётчик в таблице: «Дисциплины: все» или «Дисциплины: N»
+// Кнопка-счётчик в таблице: «Дисциплины: none» / «Дисциплины: N из M»
 function renderDiscCell(t) {
   const allowed = getAllowedDisc(t);
+  const total = (state.subjects || []).length;
   const edited = Array.isArray(scheduleEdits[Number(t.id)]?.discipline_ids);
-  const label = allowed.length ? `Дисциплины: ${allowed.length}` : "Дисциплины: все";
+  const label = allowed.length
+    ? `Дисциплины: ${allowed.length} из ${total}`
+    : "Дисциплины: none";
   const title = allowed.length
-    ? `Может вести: ${allowed.map(subjectNameById).join(", ")}`
-    : "Ограничений нет — может вести любую дисциплину. Нажмите, чтобы выбрать.";
+    ? `Ведёт: ${allowed.map(subjectNameById).join(", ")}. Нажми, чтобы изменить.`
+    : "Ни один предмет не включён — преподаватель «не ведёт» ни одну дисциплину. Нажми и отметьте нужные.";
   return `
     <button type="button"
-            class="btn btn-outline autofill-disc-btn ${edited ? "is-edited" : ""}"
+            class="btn btn-outline autofill-disc-btn ${allowed.length ? "" : "autofill-disc-none"} ${edited ? "is-edited" : ""}"
             data-disc-open="${Number(t.id)}"
             title="${escapeHtml(title)}">${escapeHtml(label)}</button>
   `;
@@ -340,6 +345,7 @@ function openDiscPopup(teacherId, anchorBtn) {
           (s) => `
         <label class="autofill-disc-item">
           <input type="checkbox" data-disc-id="${Number(s.id)}"
+                 data-disc-name="${escapeHtml(String(s.name || s.short_name || "").toLowerCase())}"
                  ${allowed.has(Number(s.id)) ? "checked" : ""} />
           <span>${escapeHtml(s.name || s.short_name || "")}</span>
         </label>`,
@@ -350,13 +356,15 @@ function openDiscPopup(teacherId, anchorBtn) {
   const el = discPopupEl();
   el.innerHTML = `
     <div class="autofill-disc-head">
-      <b>${escapeHtml(teacher.name || "")}</b> — какие дисциплины может вести
+      <b>${escapeHtml(teacher.name || "")}</b> — какие дисциплины ведёт
       <button type="button" class="autofill-disc-close" title="Закрыть">×</button>
     </div>
     <div class="autofill-disc-hint muted">
-      Ничего не отмечено = ограничений нет (можно любую дисциплину).
-      Отметьте нужные — остальные будут помечаться красным в расписании.
+      По умолчанию все предметы выключены: преподаватель «не ведёт» ничего.
+      Отметьте нужные дисциплины — остальные в расписании подсветятся красным
+      с подсказкой «не ведёт дисциплину».
     </div>
+    <input type="search" class="autofill-disc-search" placeholder="Поиск дисциплины…" />
     <div class="autofill-disc-list">${items}</div>
     <div class="autofill-disc-actions">
       <button type="button" class="btn btn-outline" data-disc-clear>Снять все</button>
@@ -364,6 +372,17 @@ function openDiscPopup(teacherId, anchorBtn) {
     </div>
   `;
   el.classList.remove("hidden");
+
+  // Поиск по названию дисциплины внутри попапа
+  const searchEl = el.querySelector(".autofill-disc-search");
+  searchEl?.addEventListener("input", () => {
+    const q = String(searchEl.value || "").trim().toLowerCase();
+    for (const label of el.querySelectorAll(".autofill-disc-item")) {
+      const cb = label.querySelector("input[data-disc-id]");
+      const name = String(cb?.dataset.discName || "");
+      label.style.display = !q || name.includes(q) ? "" : "none";
+    }
+  });
 
   // Позиционируем рядом с кнопкой
   const r = anchorBtn.getBoundingClientRect();
@@ -386,9 +405,11 @@ function syncDiscEditFromPopup() {
   edit.discipline_ids = ids;
   setStatus("Есть несохранённые изменения.");
   // Обновляем кнопку-счётчик в строке, не перерисовывая всю таблицу
+  const total = (state.subjects || []).length;
   const btn = tableEl?.querySelector(`[data-disc-open="${discPopupTeacherId}"]`);
   if (btn) {
-    btn.textContent = ids.length ? `Дисциплины: ${ids.length}` : "Дисциплины: все";
+    btn.textContent = ids.length ? `Дисциплины: ${ids.length} из ${total}` : "Дисциплины: none";
+    btn.classList.toggle("autofill-disc-none", !ids.length);
     btn.classList.add("is-edited");
   }
 }
@@ -402,10 +423,13 @@ async function refreshTeachersFromDb() {
 
 async function save() {
   const items = Object.entries(scheduleEdits)
-    .filter(([id, e]) => e.max_hours !== undefined ||
-                         e.working_days !== undefined ||
-                         e.work_start !== undefined ||
-                         e.work_end !== undefined)
+    .filter(
+      ([, e]) =>
+        e.max_hours !== undefined ||
+        e.working_days !== undefined ||
+        e.work_start !== undefined ||
+        e.work_end !== undefined
+    )
     .map(([id, e]) => ({
       id: Number(id),
       ...(e.max_hours !== undefined ? { max_hours: e.max_hours } : {}),
@@ -414,8 +438,8 @@ async function save() {
       ...(e.work_end !== undefined ? { work_end: e.work_end } : {}),
     }));
 
-  // Разрешённые дисциплины (таблица teacher_discipline): отдельный endpoint,
-  // пустой список = ограничений нет.
+  // Дисциплины преподавателя (таблица teacher_discipline): отдельный endpoint.
+  // Пустой список = преподаватель не ведёт ни одну дисциплину (по умолчанию).
   const discItems = Object.entries(scheduleEdits)
     .filter(([, e]) => Array.isArray(e.discipline_ids))
     .map(([id, e]) => ({ teacher_id: Number(id), discipline_ids: e.discipline_ids }));
@@ -478,6 +502,18 @@ function openAutoFillModal() {
   renderTeacherTable();
   overlay.classList.remove("hidden");
 
+  // Дисциплины — из справочника дисциплин (state.subjects грузится при старте);
+  // если он пуст — подтягиваем в фоне, чтобы попап «Дисциплины» не был пустым.
+  if (!state.subjects?.length) {
+    api
+      .subjects()
+      .then((subjects) => {
+        state.subjects = (subjects || []).map((x) => ({ ...x, id: Number(x.id) }));
+        renderTeacherTable();
+      })
+      .catch((err) => console.error("Не удалось загрузить дисциплины:", err));
+  }
+
   // Данные подтягиваем из БД в фоне, чтобы показать актуальный список.
   refreshTeachersFromDb()
     .then(() => renderTeacherTable())
@@ -496,7 +532,10 @@ function bindOnce() {
   isBound = true;
 
   openBtn?.addEventListener("click", openAutoFillModal);
-  closeBtn?.addEventListener("click", closeAutoFillModal);
+  closeBtn?.addEventListener("click", () => {
+    closeDiscPopup();
+    closeAutoFillModal();
+  });
   saveBtn?.addEventListener("click", save);
   bulkApplyBtn?.addEventListener("click", applyBulkHours);
   bulkAllDaysOnBtn?.addEventListener("click", () => applyBulkDays(true));
@@ -536,6 +575,42 @@ function bindOnce() {
     // подсветка изменённой строки
     input.classList.add("is-edited");
     setStatus("Есть несохранённые изменения.");
+  });
+
+  // Массовые операции над дисциплинами (попап «Дисциплины»): открытие,
+  // чекбоксы, «Снять все» / «Отметить все», закрытие. Без этих обработчиков
+  // кнопка «Дисциплины: none» ничего не делала.
+  tableEl?.addEventListener("click", (e) => {
+    const btn = e.target.closest("[data-disc-open]");
+    if (!btn) return;
+    const id = Number(btn.dataset.discOpen);
+    if (discPopupTeacherId === id && !discPopupEl().classList.contains("hidden")) {
+      closeDiscPopup();
+      return;
+    }
+    openDiscPopup(id, btn);
+  });
+
+  const discPopup = discPopupEl();
+
+  discPopup.addEventListener("change", (e) => {
+    if (e.target.closest("input[data-disc-id]")) syncDiscEditFromPopup();
+  });
+
+  discPopup.addEventListener("click", (e) => {
+    if (e.target.closest(".autofill-disc-close")) {
+      closeDiscPopup();
+      return;
+    }
+    const clear = e.target.closest("[data-disc-clear]");
+    const all = e.target.closest("[data-disc-all]");
+    if (!clear && !all) return;
+    for (const cb of discPopup.querySelectorAll("input[data-disc-id]")) {
+      // «Отметить все» включает только видимые (не отфильтрованные поиском)
+      if (all && cb.closest(".autofill-disc-item")?.style.display === "none") continue;
+      cb.checked = Boolean(all);
+    }
+    syncDiscEditFromPopup();
   });
 
   overlay?.addEventListener("mousedown", (e) => {
