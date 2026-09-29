@@ -8,6 +8,7 @@ import {
   refreshTeacherLoad,
   syncTeacherLoadHighlight,
   paintTeacherOptionsAfterFill,
+  teacherConditionProblems,
 } from "./teachersLoadHint.js";
 
 // Загрузка недельной нагрузки преподавателей (учёт teacher.max_hours при
@@ -569,6 +570,19 @@ export async function saveLesson() {
     return Number.isFinite(n) && n > 0 ? n : null;
   };
 
+  // Мягкая проверка условий преподавателя из окна «⚡ Условия заполнения
+  // расписания» (рабочие дни, часы «с/до», разрешённые дисциплины).
+  // Нарушения не блокируют сохранение — но показываем полный список сразу.
+  const condProblems = teacherConditionProblems(teacherSelect.value);
+  if (condProblems.length) {
+    const ok = confirm(
+      "Нарушение условий преподавателя:\n\n• " +
+        condProblems.join("\n• ") +
+        "\n\nВсё равно сохранить занятие?",
+    );
+    if (!ok) return;
+  }
+
   const payload = {
     hours: Number(hoursSelect?.value || 2),
     customText: customTextInput?.value?.trim() || "",
@@ -708,6 +722,10 @@ export async function deleteLesson() {
 
 subjectSelect.addEventListener("change", async () => {
   if (isProgrammaticChange) return;
+
+  // Смена дисциплины влияет на проверку «не ведёт эту дисциплину» —
+  // перекрашиваем список преподавателей с суммарными подсказками.
+  syncTeacherLoadHighlight();
 
   const groupId = state.currentEdit?.groupId;
   if (!groupId) return;
