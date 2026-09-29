@@ -26,18 +26,34 @@ const saveBtn = document.getElementById("autoFillSaveBtn");
 const statusEl = document.getElementById("autoFillStatus");
 const bulkHoursInput = document.getElementById("autoFillBulkHours");
 const bulkApplyBtn = document.getElementById("autoFillApplyBulkBtn");
+const bulkAllDaysOnBtn = document.getElementById("autoFillAllDaysOnBtn");
+const bulkAllDaysOffBtn = document.getElementById("autoFillAllDaysOffBtn");
 
 let isBound = false;
 let activeTab = "teachers";
 
-// Локальные правки часов: { [teacherId]: number }. Пока значения нет —
-// используется то, что пришло из БД (или 36 по умолчанию).
-let hoursEdits = {};
+// Локальные правки: { [teacherId]: { max_hours?, working_days?, work_start?, work_end? } }.
+// Пока поля нет — используется то, что пришло из БД (или значения по умолчанию).
+let scheduleEdits = {};
 
 const TABS = [
   { key: "teachers", title: "Преподаватели" },
   { key: "soon", title: "Группы (скоро)" },
   { key: "soon2", title: "Кабинеты (скоро)" },
+];
+
+// Сокращённые названия дней для шапки таблицы (Пн..Вс)
+const DAY_SHORT = ["Пн", "Вт", "Ср", "Чт", "Пт", "Сб", "Вс"];
+
+// Полные названия — для подсказок title у чекбоксов
+const DAY_FULL = [
+  "Понедельник",
+  "Вторник",
+  "Среда",
+  "Четверг",
+  "Пятница",
+  "Суббота",
+  "Воскресенье",
 ];
 
 function normHours(value) {
@@ -49,10 +65,54 @@ function normHours(value) {
   return n;
 }
 
+// Строка из 7 символов '0'/'1' (Пн..Вс). Пустое/битое значение → все рабочие.
+function normDays(value) {
+  const s = String(value ?? "").replace(/[^01]/g, "");
+  return s.length === 7 ? s : "1111111";
+}
+
+// "HH:MM" или "" (без ограничения)
+function normTime(value) {
+  const v = String(value ?? "").trim();
+  return /^\d{1,2}:\d{2}$/.test(v) ? v : "";
+}
+
 function getHours(teacher) {
   const id = Number(teacher.id);
-  if (id in hoursEdits) return hoursEdits[id];
+  if (scheduleEdits[id]?.max_hours !== undefined) return scheduleEdits[id].max_hours;
   return normHours(teacher.max_hours ?? DEFAULT_MAX_HOURS);
+}
+
+function getDays(teacher) {
+  const id = Number(teacher.id);
+  if (scheduleEdits[id]?.working_days !== undefined)
+    return scheduleEdits[id].working_days;
+  return normDays(teacher.working_days);
+}
+
+function getWorkStart(teacher) {
+  const id = Number(teacher.id);
+  if (scheduleEdits[id]?.work_start !== undefined)
+    return scheduleEdits[id].work_start;
+  return normTime(teacher.work_start);
+}
+
+function getWorkEnd(teacher) {
+  const id = Number(teacher.id);
+  if (scheduleEdits[id]?.work_end !== undefined)
+    return scheduleEdits[id].work_end;
+  return normTime(teacher.work_end);
+}
+
+function isRowEdited(t) {
+  const e = scheduleEdits[Number(t.id)];
+  if (!e) return false;
+  return (
+    (e.max_hours !== undefined && e.max_hours !== normHours(t.max_hours ?? DEFAULT_MAX_HOURS)) ||
+    (e.working_days !== undefined && e.working_days !== normDays(t.working_days)) ||
+    (e.work_start !== undefined && e.work_start !== normTime(t.work_start)) ||
+    (e.work_end !== undefined && e.work_end !== normTime(t.work_end))
+  );
 }
 
 function escapeHtml(s) {
@@ -101,18 +161,34 @@ function renderTeacherTable() {
       <tr>
         <th>Преподаватель</th>
         <th style="width: 140px;">Часов в неделю</th>
+        <th class="autofill-days-head">Рабочие дни (Пн–Вс)</th>
+        <th style="width: 110px;">С</th>
+        <th style="width: 110px;">До</th>
       </tr>
     </thead>`;
 
   if (!rows.length) {
-    tableEl.innerHTML = `${head}<tbody><tr><td colspan="2" class="muted">
+    tableEl.innerHTML = `${head}<tbody><tr><td colspan="5" class="muted">
         Преподаватели не найдены. Добавьте их в справочнике «Преподаватели».</td></tr></tbody>`;
     return;
   }
 
   const body = rows
     .map((t) => {
-      const edited = Number(t.id) in hoursEdits;
+      const edited = isRowEdited(t);
+      const days = getDays(t);
+      const dayBoxes = DAY_SHORT.map(
+        (label, i) => `
+        <label class="autofill-day" title="${DAY_FULL[i]}">
+          <input type="checkbox"
+                 data-teacher-id="${Number(t.id)}"
+                 data-field="working_days"
+                 data-day-index="${i}"
+                 ${days[i] === "1" ? "checked" : ""} />
+          <span>${label}</span>
+        </label>`
+      ).join("");
+
       return `
       <tr>
         <td>${escapeHtml(t.name) || "(без фамилии)"}</td>
@@ -121,7 +197,27 @@ function renderTeacherTable() {
             class="select autofill-hours-input ${edited ? "is-edited" : ""}"
             type="number" min="0" max="999" step="0.5"
             data-teacher-id="${Number(t.id)}"
+            data-field="max_hours"
             value="${getHours(t)}"
+          />
+        </td>
+        <td class="autofill-days-cell">${dayBoxes}</td>
+        <td>
+          <input
+            class="select autofill-time-input ${edited ? "is-edited" : ""}"
+            type="time" step="60"
+            data-teacher-id="${Number(t.id)}"
+            data-field="work_start"
+            value="${getWorkStart(t)}"
+          />
+        </td>
+        <td>
+          <input
+            class="select autofill-time-input ${edited ? "is-edited" : ""}"
+            type="time" step="60"
+            data-teacher-id="${Number(t.id)}"
+            data-field="work_end"
+            value="${getWorkEnd(t)}"
           />
         </td>
       </tr>`;
@@ -147,9 +243,12 @@ async function refreshTeachersFromDb() {
 }
 
 async function save() {
-  const items = Object.entries(hoursEdits).map(([id, max_hours]) => ({
+  const items = Object.entries(scheduleEdits).map(([id, e]) => ({
     id: Number(id),
-    max_hours,
+    ...(e.max_hours !== undefined ? { max_hours: e.max_hours } : {}),
+    ...(e.working_days !== undefined ? { working_days: e.working_days } : {}),
+    ...(e.work_start !== undefined ? { work_start: e.work_start } : {}),
+    ...(e.work_end !== undefined ? { work_end: e.work_end } : {}),
   }));
 
   if (!items.length) {
@@ -160,12 +259,12 @@ async function save() {
   try {
     setStatus("Сохранение…");
     await api.saveTeacherHours(items);
-    hoursEdits = {}; // все правки записаны в БД
+    scheduleEdits = {}; // все правки записаны в БД
     await refreshTeachersFromDb();
     renderTeacherTable();
     setStatus(`Сохранено изменений: ${items.length}.`);
   } catch (err) {
-    console.error("Не удалось сохранить часы преподавателей:", err);
+    console.error("Не удалось сохранить настройки преподавателей:", err);
     setStatus(`Ошибка сохранения: ${err?.message || err}`, true);
   }
 }
@@ -173,16 +272,33 @@ async function save() {
 function applyBulkHours() {
   const value = normHours(bulkHoursInput?.value);
   const rows = filteredTeachers();
-  for (const t of rows) hoursEdits[Number(t.id)] = value;
+  for (const t of rows) {
+    const id = Number(t.id);
+    scheduleEdits[id] = { ...(scheduleEdits[id] || {}), max_hours: value };
+  }
   renderTeacherTable();
   setStatus(
     `В поле «${value} ч» установлено ${rows.length} преподав. (видимых). Не забудьте нажать «Сохранить».`
   );
 }
 
+// Массовая установка рабочих дней для всех видимых строк
+function applyBulkDays(on) {
+  const days = on ? "1111111" : "0000000";
+  const rows = filteredTeachers();
+  for (const t of rows) {
+    const id = Number(t.id);
+    scheduleEdits[id] = { ...(scheduleEdits[id] || {}), working_days: days };
+  }
+  renderTeacherTable();
+  setStatus(
+    `${on ? "Все" : "Ни один"} день недели установлен для ${rows.length} преподав. (видимых). Не забудьте нажать «Сохранить».`
+  );
+}
+
 function openAutoFillModal() {
   if (!overlay) return;
-  hoursEdits = {};
+  scheduleEdits = {};
   setStatus("");
   if (searchInput) searchInput.value = "";
   switchTab("teachers");
@@ -210,6 +326,8 @@ function bindOnce() {
   closeBtn?.addEventListener("click", closeAutoFillModal);
   saveBtn?.addEventListener("click", save);
   bulkApplyBtn?.addEventListener("click", applyBulkHours);
+  bulkAllDaysOnBtn?.addEventListener("click", () => applyBulkDays(true));
+  bulkAllDaysOffBtn?.addEventListener("click", () => applyBulkDays(false));
 
   searchInput?.addEventListener("input", renderTeacherTable);
 
@@ -218,11 +336,31 @@ function bindOnce() {
     if (btn) switchTab(btn.dataset.tab);
   });
 
-  // Правки часов прямо в таблице
+  // Правки прямо в таблице: часы, рабочие дни (чекбоксы Пн..Вс), время С/До
   tableEl?.addEventListener("change", (e) => {
     const input = e.target.closest("input[data-teacher-id]");
     if (!input) return;
-    hoursEdits[Number(input.dataset.teacherId)] = normHours(input.value);
+    const id = Number(input.dataset.teacherId);
+    const field = input.dataset.field;
+    const edit = scheduleEdits[id] || (scheduleEdits[id] = {});
+
+    if (field === "working_days") {
+      // чекбокс одного дня: обновляем соответствующий символ строки '0'/'1'
+      const teacher = (state.teachers || []).find((t) => Number(t.id) === id);
+      const days = Array.from(
+        edit.working_days !== undefined
+          ? edit.working_days
+          : normDays(teacher?.working_days)
+      );
+      days[Number(input.dataset.dayIndex)] = input.checked ? "1" : "0";
+      edit.working_days = days.join("");
+    } else if (field === "work_start" || field === "work_end") {
+      edit[field] = normTime(input.value);
+    } else {
+      edit.max_hours = normHours(input.value);
+    }
+
+    // подсветка изменённой строки
     input.classList.add("is-edited");
     setStatus("Есть несохранённые изменения.");
   });

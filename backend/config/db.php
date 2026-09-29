@@ -68,6 +68,35 @@ function dbAutoMigrate(mysqli $conn) {
          AFTER patronymic"
     );
   }
+
+  // teacher.working_days — рабочие дни преподавателя (7 символов Пн..Вс,
+  // '1' — может работать). Используется окном «⚡ Условия заполнения»
+  // (вкладка «Преподаватели») и подсветкой красным при назначении занятия
+  // в нерабочий день/вне рабочего времени.
+  if (!dbColumnExists($conn, 'teacher', 'working_days')) {
+    $conn->query(
+      "ALTER TABLE teacher
+         ADD COLUMN working_days CHAR(7) NOT NULL DEFAULT '1111111'
+         AFTER max_hours"
+    );
+  }
+
+  // teacher.work_start / work_end — рабочее время («со скольки до скольки»).
+  // NULL — ограничение по времени не задано (работает весь день).
+  if (!dbColumnExists($conn, 'teacher', 'work_start')) {
+    $conn->query(
+      "ALTER TABLE teacher
+         ADD COLUMN work_start TIME NULL
+         AFTER working_days"
+    );
+  }
+  if (!dbColumnExists($conn, 'teacher', 'work_end')) {
+    $conn->query(
+      "ALTER TABLE teacher
+         ADD COLUMN work_end TIME NULL
+         AFTER work_start"
+    );
+  }
 }
 
 function dbClose($conn) {

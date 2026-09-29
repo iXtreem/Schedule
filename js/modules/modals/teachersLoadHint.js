@@ -13,11 +13,20 @@
  * «уже поставлено + эта пара» против лимита.
  * ------------------------------------------------------------------------- */
 import { api } from "../../LoadFromBD/api.js";
+import { state } from "../../../app.js";
+import {
+  checkTeacherSchedule,
+  scheduleProblemText,
+} from "../schedule/teacherSchedule.js";
 
 const OK_CLASS = "teacher-ok";
 const OVER_CLASS = "teacher-over";
 const OPT_OK_CLASS = "teacher-opt-ok";
 const OPT_OVER_CLASS = "teacher-opt-over";
+// Отдельный класс/подсказка для нарушения графика работы (дни/часы из окна
+// «⚡ Условия заполнения расписания» → вкладка «Преподаватели»)
+const SCHED_WARN_CLASS = "teacher-sched-warn";
+const OPT_SCHED_WARN_CLASS = "teacher-opt-sched-warn";
 
 let hintEl = null;
 let teacherSelectEl = null;
@@ -50,14 +59,65 @@ function computeState(teacherId) {
   return computeStateFor(teacherId, currentExtraHours());
 }
 
+// Текущая редактируемая пара (день недели 1..7, слот 1..N) из state.currentEdit.
+// openModal записывает { groupId, dayIndex, pairIndex } — конвертируем здесь,
+// чтобы проверка графика работала при ручном выборе преподавателя.
+function currentPairSlot() {
+  const edit = state?.currentEdit;
+  if (!edit) return null;
+  const dayIndex = Number(edit.dayIndex);
+  const pairIndex = Number(edit.pairIndex);
+  if (!Number.isFinite(dayIndex) || !Number.isFinite(pairIndex)) return null;
+
+  // Фактический день недели берём по дате (как в таблице): неделя может
+  // начинаться не с понедельника.
+  let dow = dayIndex + 1;
+  if (state.weekStart) {
+    const d = new Date(state.weekStart);
+    if (!Number.isNaN(d.getTime())) {
+      d.setDate(d.getDate() + dayIndex);
+      const jsDow = d.getDay(); // 0=вс … 6=сб
+      dow = jsDow === 0 ? 7 : jsDow;
+    }
+  }
+  return { dayOfWeek: dow, timeSlot: pairIndex + 1 };
+}
+
+// Проверка графика работы для преподавателя и текущей пары модалки.
+function scheduleCheckFor(teacherId) {
+  const slot = currentPairSlot();
+  if (!slot || !teacherId) return null;
+  const res = checkTeacherSchedule(teacherId, slot.dayOfWeek, slot.timeSlot);
+  if (res.ok) return null;
+  const name =
+    teacherSelectEl?.options[teacherSelectEl?.selectedIndex]?.textContent || "";
+  return scheduleProblemText(name, res);
+}
+
+function scheduleCheckForOption(teacherId) {
+  const slot = currentPairSlot();
+  if (!slot || !teacherId) return null;
+  const res = checkTeacherSchedule(teacherId, slot.dayOfWeek, slot.timeSlot);
+  if (res.ok) return null;
+  const t = (state.teachers || []).find((x) => Number(x.id) === Number(teacherId));
+  return scheduleProblemText(String(t?.name || ""), res);
+}
+
 // Подсветка всех option в списке преподавателей: зелёный — можно назначить
-// текущую пару в пределах лимита, красный — нельзя.
+// текущую пару в пределах лимита, красный — нельзя (превышение часов
+// ИЛИ нарушение графика работы — дни/часы из «⚡ Условия заполнения»).
 function paintTeacherOptions() {
   if (!teacherSelectEl) return;
   const extra = currentExtraHours();
   for (const opt of teacherSelectEl.options) {
-    opt.classList.remove(OPT_OK_CLASS, OPT_OVER_CLASS);
+    opt.classList.remove(OPT_OK_CLASS, OPT_OVER_CLASS, OPT_SCHED_WARN_CLASS);
     if (!opt.value) continue; // плейсхолдер «— выбери преподавателя —»
+    const schedWarn = scheduleCheckForOption(opt.value);
+    if (schedWarn) {
+      opt.classList.add(OPT_SCHED_WARN_CLASS);
+      opt.title = schedWarn;
+      continue;
+    }
     const st = computeStateFor(opt.value, extra);
     if (!st) continue; // нет данных о нагрузке — не красим
     opt.classList.add(st.over ? OPT_OVER_CLASS : OPT_OK_CLASS);
@@ -70,12 +130,24 @@ function paintTeacherOptions() {
 function applyHighlight() {
   if (!teacherSelectEl) return;
   const st = computeState(teacherSelectEl.value);
-  teacherSelectEl.classList.remove(OK_CLASS, OVER_CLASS);
-  if (st) teacherSelectEl.classList.add(st.over ? OVER_CLASS : OK_CLASS);
+  teacherSelectEl.classList.remove(OK_CLASS, OVER_CLASS, SCHED_WARN_CLASS);
+  const schedWarn = scheduleCheckFor(teacherSelectEl.value);
+  if (schedWarn) {
+    // нарушение графика работы — всегда красным, даже если часов хватает
+    teacherSelectEl.classList.add(SCHED_WARN_CLASS);
+    teacherSelectEl.title = schedWarn;
+  } else {
+    teacherSelectEl.title = "";
+    if (st) teacherSelectEl.classList.add(st.over ? OVER_CLASS : OK_CLASS);
+  }
   paintTeacherOptions();
 }
 
 function hintText() {
+  // Нарушение графика работы показываем в приоритете (оно жёстче часов)
+  const schedWarn = scheduleCheckFor(teacherSelectEl?.value);
+  if (schedWarn) return schedWarn;
+
   const st = computeState(teacherSelectEl?.value);
   if (!st) return "";
   const name =
@@ -102,7 +174,8 @@ function showHintAt(x, y) {
   hintEl.classList.remove("hidden");
   hintEl.classList.toggle(
     "teacher-load-hint-over",
-    Boolean(computeState(teacherSelectEl?.value)?.over),
+    Boolean(scheduleCheckFor(teacherSelectEl?.value)) ||
+      Boolean(computeState(teacherSelectEl?.value)?.over),
   );
 
   // не даём подсказке вылезти за правый/нижний край окна
