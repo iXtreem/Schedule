@@ -105,6 +105,30 @@ export const api = {
       }),
       throwOnError: true,
     }),
+  // Дисциплины, которые может вести преподаватель (окно «⚡ Условия
+  // заполнения расписания» → вкладка «Преподаватели», кнопка «Дисциплины»).
+  // GET: [{ teacher_id, discipline_ids: [..] }, ...]
+  teacherDisciplines: () =>
+    requestJson(`${API}?entity=teachers&mode=disciplines`, {}, []),
+  // POST items: [{ teacher_id, discipline_ids: [..] }]
+  // Пустой discipline_ids = ограничений нет (можно любую дисциплину).
+  saveTeacherDisciplines: (items) =>
+    requestJson(
+      `${API}?entity=teachers&mode=disciplines`,
+      {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          items: (Array.isArray(items) ? items : []).map((x) => ({
+            teacher_id: Number(x?.teacher_id),
+            discipline_ids: (Array.isArray(x?.discipline_ids) ? x.discipline_ids : [])
+              .map((v) => Number(v))
+              .filter((v) => Number.isFinite(v) && v > 0),
+          })),
+        }),
+        throwOnError: true,
+      },
+    ),
   rooms: () => requestJson(`${API}?entity=rooms`, {}, []),
   lessonTypes: () => requestJson(`${API}?entity=lesson_types`, {}, []),
 

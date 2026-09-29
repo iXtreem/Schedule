@@ -7,8 +7,10 @@ require_once __DIR__ . '/../../lib/db.php';
 // используется окном «Автозаполнение» и будущим генератором расписания.
 // Рабочие дни/часы по умолчанию: '1111111' — работает все дни (Пн..Вс),
 // work_start/work_end = NULL — время не ограничено.
+// allowed_disciplines — карта { teacher_id: [discipline_id, ...] } из таблицы
+// teacher_discipline: пустой массив = ограничений нет (можно любую дисциплину).
 function repoGetTeachers($conn) {
-  return dbAll(
+  $rows = dbAll(
     $conn,
     "SELECT
         id,
@@ -25,6 +27,110 @@ function repoGetTeachers($conn) {
      WHERE is_deleted = 0
      ORDER BY surname, first_name"
   );
+
+  // Дисциплины преподавателей (окно «⚡ Условия заполнения» → «Преподаватели»,
+  // кнопка «Дисциплины»). Таблица создаётся авто-миграцией (config/db.php).
+  $allowed = [];
+  $tdRows = dbTableExists($conn, 'teacher_discipline')
+    ? dbAll(
+        $conn,
+        "SELECT teacher_id, discipline_id
+           FROM teacher_discipline
+          WHERE is_deleted = 0"
+      )
+    : [];
+  foreach ($tdRows as $r) {
+    $tid = (int)$r['teacher_id'];
+    if (!isset($allowed[$tid])) $allowed[$tid] = [];
+    $allowed[$tid][] = (int)$r['discipline_id'];
+  }
+
+  foreach ($rows as &$row) {
+    $tid = (int)$row['id'];
+    $row['allowed_disciplines'] = $allowed[$tid] ?? [];
+  }
+  unset($row);
+
+  return $rows;
+}
+
+// ---------------------------------------------------------------------------
+// Дисциплины, которые может вести преподаватель (таблица teacher_discipline).
+// Ответ: [{ teacher_id, discipline_ids: [..] }, ...] — только заполненные.
+// ---------------------------------------------------------------------------
+function repoGetTeacherDisciplines($conn) {
+  if (!dbTableExists($conn, 'teacher_discipline')) return [];
+
+  $rows = dbAll(
+    $conn,
+    "SELECT teacher_id, discipline_id
+       FROM teacher_discipline
+      WHERE is_deleted = 0"
+  );
+
+  $map = [];
+  foreach ($rows as $r) {
+    $tid = (int)$r['teacher_id'];
+    if (!isset($map[$tid])) $map[$tid] = [];
+    $map[$tid][] = (int)$r['discipline_id'];
+  }
+
+  $out = [];
+  foreach ($map as $tid => $ids) {
+    $out[] = ['teacher_id' => $tid, 'discipline_ids' => $ids];
+  }
+  return $out;
+}
+
+// Сохранение списка дисциплин преподавателя:
+//   { teacher_id, discipline_ids: [] } — очистить (ограничений нет);
+//   { teacher_id, discipline_ids: [5, 7] } — разрешить только эти.
+// Реализация: помечаем удалёнными все текущие строки преподавателя, затем
+// вставляем нужные (восстанавливаем is_deleted=0, если строка уже была).
+function repoSaveTeacherDisciplines($conn, array $items) {
+  if (!dbTableExists($conn, 'teacher_discipline')) return 0;
+  $saved = 0;
+
+  foreach ($items as $item) {
+    $tid = (int)($item['teacher_id'] ?? 0);
+    if ($tid <= 0) continue;
+    $ids = array_values(array_unique(array_filter(
+      array_map('intval', (array)($item['discipline_ids'] ?? [])),
+      fn($v) => $v > 0
+    )));
+
+    $conn->begin_transaction();
+    try {
+      // «удаляем» все прежние разрешения
+      $stmt = $conn->prepare(
+        'UPDATE teacher_discipline SET is_deleted = 1 WHERE teacher_id = ?'
+      );
+      $stmt->bind_param('i', $tid);
+      $stmt->execute();
+      $stmt->close();
+
+      // включаем разрешённые (INSERT ... ON DUPLICATE KEY UPDATE идемпотентно
+      // благодаря UNIQUE KEY uq_teacher_disc)
+      foreach ($ids as $did) {
+        $stmt = $conn->prepare(
+          'INSERT INTO teacher_discipline (teacher_id, discipline_id, is_deleted)
+           VALUES (?, ?, 0)
+           ON DUPLICATE KEY UPDATE is_deleted = 0'
+        );
+        $stmt->bind_param('ii', $tid, $did);
+        $stmt->execute();
+        $stmt->close();
+      }
+
+      $conn->commit();
+      $saved++;
+    } catch (Throwable $e) {
+      $conn->rollback();
+      throw $e;
+    }
+  }
+
+  return $saved;
 }
 
 // Сохранение лимитов часов и графика работы: массив

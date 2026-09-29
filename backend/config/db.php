@@ -57,6 +57,19 @@ function dbColumnExists(mysqli $conn, string $table, string $column): bool {
   return (int)($row['c'] ?? 0) > 0;
 }
 
+// Проверка существования таблицы (для авто-миграции новых таблиц схемы).
+function dbTableExists(mysqli $conn, string $table): bool {
+  $stmt = $conn->prepare(
+    "SELECT COUNT(*) AS c FROM information_schema.TABLES
+      WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = ?"
+  );
+  $stmt->bind_param('s', $table);
+  $stmt->execute();
+  $row = $stmt->get_result()->fetch_assoc();
+  $stmt->close();
+  return (int)($row['c'] ?? 0) > 0;
+}
+
 function dbAutoMigrate(mysqli $conn) {
   // teacher.max_hours — макс. часов преподавателя в неделю (по умолчанию 36).
   // Используется окном «Автозаполнение» (вкладка «Преподаватели»)
@@ -95,6 +108,25 @@ function dbAutoMigrate(mysqli $conn) {
       "ALTER TABLE teacher
          ADD COLUMN work_end TIME NULL
          AFTER work_start"
+    );
+  }
+
+  // teacher_discipline — дисциплины, которые может вести преподаватель
+  // (окно «⚡ Условия заполнения расписания» → вкладка «Преподаватели»,
+  // кнопка «Дисциплины»). Пустой список = ограничений нет. Красная
+  // подсветка и подсказка при попытке поставить недозволенную дисциплину.
+  if (!dbTableExists($conn, 'teacher_discipline')) {
+    $conn->query(
+      "CREATE TABLE teacher_discipline (
+         id            INT NOT NULL AUTO_INCREMENT PRIMARY KEY,
+         teacher_id    INT NOT NULL,
+         discipline_id INT NOT NULL,
+         is_deleted    TINYINT(1) NOT NULL DEFAULT 0,
+         UNIQUE KEY uq_teacher_disc (teacher_id, discipline_id),
+         KEY idx_td_teacher (teacher_id),
+         CONSTRAINT fk_td_teacher    FOREIGN KEY (teacher_id)    REFERENCES teacher (id),
+         CONSTRAINT fk_td_discipline FOREIGN KEY (discipline_id) REFERENCES discipline (id)
+       ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4"
     );
   }
 }

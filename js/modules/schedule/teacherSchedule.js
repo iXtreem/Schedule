@@ -5,11 +5,15 @@
  * Данные приходят из таблицы teacher (см. База данных/schema.sql):
  *   working_days — строка из 7 символов '1'/'0' (Пн..Вс), '1' — может работать;
  *   work_start / work_end — рабочее время («со скольки до скольки»),
- *                          NULL/пусто — ограничение не задано.
+ *                          NULL/пусто — ограничение не задано;
+ *   allowed_disciplines — список id дисциплин, которые преподаватель МОЖЕТ
+ *                          вести (таблица teacher_discipline). Пустой список =
+ *                          ограничений нет (можно любую дисциплину).
  *
  * Модуль используют:
  *   • renderTeacherTable.js — красит занятую ячейку красным, если занятие
- *     попало в нерабочий день/время (с подсказкой title);
+ *     попало в нерабочий день/время или ведёт недозволенную дисциплину
+ *     (подсказка title суммирует ВСЕ найденные нарушения);
  *   • teachersLoadHint.js  — красит option'ы и поле выбора преподавателя
  *     в модалке занятия при ручном редактировании;
  *   • будущий генератор автозаполнения — как жёсткий фильтр слотов.
@@ -76,8 +80,11 @@ function normDays(workingDays) {
 
 // Основной API: можно ли преподавателю вести пару в этот день/слот?
 // dayOfWeek: 1=Пн … 7=Вс; timeSlot: номер пары (1..N).
-// Возвращает { ok, problems: [тексты подсказок] }.
-export function checkTeacherSchedule(teacherId, dayOfWeek, timeSlot, date) {
+// options.subjectId — id дисциплины занятия (если известен): проверяется
+//   список разрешённых дисциплин преподавателя (teacher_discipline).
+// Возвращает { ok, problems: [тексты подсказок] } — ВСЕ нарушения сразу
+// (подсказки суммируются через "; ").
+export function checkTeacherSchedule(teacherId, dayOfWeek, timeSlot, date, options = {}) {
   const teacher = teacherById(teacherId);
   if (!teacher) return { ok: true, problems: [] }; // нет данных — не мешаем
 
@@ -109,7 +116,56 @@ export function checkTeacherSchedule(teacherId, dayOfWeek, timeSlot, date) {
     }
   }
 
+  // 3) Разрешена ли преподавателю эта дисциплина
+  //    (окно «⚡ Условия заполнения» → вкладка «Преподаватели» → «Дисциплины»,
+  //     таблица teacher_discipline). Пустой список = ограничений нет.
+  const subjectId = Number(options?.subjectId ?? 0);
+  if (subjectId > 0) {
+    const allowed = getAllowedDisciplines(teacher);
+    if (allowed.length && !allowed.includes(subjectId)) {
+      const subj = (state.subjects || []).find(
+        (s) => Number(s.id) === subjectId,
+      );
+      const name = String(subj?.name || subj?.short_name || `№${subjectId}`);
+      problems.push(`не ведёт дисциплину «${name}»`);
+    }
+  }
+
   return { ok: problems.length === 0, problems };
+}
+
+// Список id дисциплин, которые может вести преподаватель.
+// Поддерживаются оба формата из БД: массив чисел (allowed_disciplines)
+// и строка "5,7,12" (discipline_ids) — на случай прямого чтения таблицы.
+export function getAllowedDisciplines(teacherOrId) {
+  const teacher =
+    typeof teacherOrId === "object" && teacherOrId !== null
+      ? teacherOrId
+      : teacherById(teacherOrId);
+  if (!teacher) return [];
+
+  const raw =
+    teacher.allowed_disciplines ?? teacher.discipline_ids ?? null;
+
+  if (Array.isArray(raw)) {
+    return raw.map((v) => Number(v)).filter((v) => Number.isFinite(v) && v > 0);
+  }
+  if (typeof raw === "string" && raw.trim() !== "") {
+    return raw
+      .split(/[,;\s]+/)
+      .map((v) => Number(v))
+      .filter((v) => Number.isFinite(v) && v > 0);
+  }
+  return [];
+}
+
+// Можно ли преподавателю вести данную дисциплину (пустой список = всегда да).
+export function canTeachDiscipline(teacherOrId, subjectId) {
+  const allowed = getAllowedDisciplines(teacherOrId);
+  const sid = Number(subjectId);
+  if (!sid || sid <= 0) return true; // дисциплина неизвестна — не мешаем
+  if (!allowed.length) return true;  // ограничений нет
+  return allowed.includes(sid);
 }
 
 function fmtHM(minutes) {
@@ -118,8 +174,31 @@ function fmtHM(minutes) {
   return `${String(h).padStart(2, "0")}:${String(m).padStart(2, "0")}`;
 }
 
-// Текст подсказки для ячейки/option'а (пустая строка, если всё в порядке)
-export function scheduleProblemText(teacherName, res) {
+// Текст подсказки для ячейки/option'а (пустая строка, если всё в порядке).
+// kind — тип нарушения: "schedule" (график работы) или "discipline"
+// (разрешённые дисциплины); влияет только на заголовок подсказки.
+export function scheduleProblemText(teacherName, res, kind = "schedule") {
   if (!res || res.ok) return "";
-  return `⚠ ${teacherName}: нарушение графика работы — ${res.problems.join("; ")}`;
+  const label =
+    kind === "discipline"
+      ? "преподаватель не ведёт эту дисциплину"
+      : "нарушение графика работы";
+  return `⚠ ${teacherName}: ${label} — ${res.problems.join("; ")}`;
+}
+
+// --- Проверки для модалки занятия (ручное редактирование) ------------------
+// Все проверки суммируются: вызывающий код собирает массив problems из
+// checkTeacherSchedule + checkDisciplineForTeacher и показывает один текст.
+
+// Проверка «может ли преподаватель вести дисциплину» без привязки ко дню.
+// Возвращает { ok, problems: [тексты] } — как checkTeacherSchedule.
+export function checkDisciplineForTeacher(teacherId, subjectId) {
+  const teacher = teacherById(teacherId);
+  const sid = Number(subjectId);
+  if (!teacher || !sid || sid <= 0) return { ok: true, problems: [] };
+  const allowed = getAllowedDisciplines(teacher);
+  if (!allowed.length || allowed.includes(sid)) return { ok: true, problems: [] };
+  const subj = (state.subjects || []).find((s) => Number(s.id) === sid);
+  const name = String(subj?.name || subj?.short_name || `№${sid}`);
+  return { ok: false, problems: [`не ведёт дисциплину «${name}»`] };
 }
