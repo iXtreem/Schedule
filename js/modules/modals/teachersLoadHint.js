@@ -3,6 +3,9 @@
  *
  * Зелёный  — часов за неделю НЕ больше лимита (teacher.max_hours, по умолч. 36)
  * Красный  — лимит превышен.
+ * В выпадающем списке <select id="teacherSelect"> каждый option тоже
+ * подсвечивается: зелёный — преподаватель может взять текущую пару
+ * (с учётом выбранных «Часы»: 1 или 2), красный — уже не может.
  * У курсора показывается маленькая подсказка с цифрами.
  *
  * Данные: GET ?entity=teachers&load=week&week_id=N (backend/modules/teachers).
@@ -13,6 +16,8 @@ import { api } from "../../LoadFromBD/api.js";
 
 const OK_CLASS = "teacher-ok";
 const OVER_CLASS = "teacher-over";
+const OPT_OK_CLASS = "teacher-opt-ok";
+const OPT_OVER_CLASS = "teacher-opt-over";
 
 let hintEl = null;
 let teacherSelectEl = null;
@@ -31,20 +36,43 @@ function currentExtraHours() {
   return Number.isFinite(h) && h > 0 ? h : 0;
 }
 
-function computeState(teacherId) {
+// Состояние для конкретного преподавателя и конкретной добавляемой нагрузки.
+// extraHours — часы текущей пары (1 или 2 из select «Часы»).
+function computeStateFor(teacherId, extraHours) {
   const info = loadByTeacherId.get(Number(teacherId));
   if (!info) return null;
-  const total = Number(info.week_hours || 0) + currentExtraHours();
+  const total = Number(info.week_hours || 0) + extraHours;
   const limit = Number(info.max_hours || 0);
   return { total, limit, over: total > limit + 1e-9 };
+}
+
+function computeState(teacherId) {
+  return computeStateFor(teacherId, currentExtraHours());
+}
+
+// Подсветка всех option в списке преподавателей: зелёный — можно назначить
+// текущую пару в пределах лимита, красный — нельзя.
+function paintTeacherOptions() {
+  if (!teacherSelectEl) return;
+  const extra = currentExtraHours();
+  for (const opt of teacherSelectEl.options) {
+    opt.classList.remove(OPT_OK_CLASS, OPT_OVER_CLASS);
+    if (!opt.value) continue; // плейсхолдер «— выбери преподавателя —»
+    const st = computeStateFor(opt.value, extra);
+    if (!st) continue; // нет данных о нагрузке — не красим
+    opt.classList.add(st.over ? OPT_OVER_CLASS : OPT_OK_CLASS);
+    opt.title = st.over
+      ? `${opt.textContent}: ${fmt(st.total)} ч > лимита ${fmt(st.limit)} ч`
+      : `${opt.textContent}: ${fmt(st.total)} ч из ${fmt(st.limit)} ч`;
+  }
 }
 
 function applyHighlight() {
   if (!teacherSelectEl) return;
   const st = computeState(teacherSelectEl.value);
   teacherSelectEl.classList.remove(OK_CLASS, OVER_CLASS);
-  if (!st) return;
-  teacherSelectEl.classList.add(st.over ? OVER_CLASS : OK_CLASS);
+  if (st) teacherSelectEl.classList.add(st.over ? OVER_CLASS : OK_CLASS);
+  paintTeacherOptions();
 }
 
 function hintText() {
@@ -110,6 +138,7 @@ export function initTeacherLoadHint({ teacherSelect, hoursSelect, hint }) {
     if (teacherSelectEl.value) showHintAt(e.clientX, e.clientY);
   });
   teacherSelectEl.addEventListener("mouseleave", hideHint);
+  // Смена «Часы» (1 или 2) — пересчитываем прогноз и перекрашиваем option.
   hoursSelectEl?.addEventListener("change", () => {
     applyHighlight();
     if (hintEl && !hintEl.classList.contains("hidden") && teacherSelectEl.value) {
@@ -117,6 +146,10 @@ export function initTeacherLoadHint({ teacherSelect, hoursSelect, hint }) {
       showHintAt(r.right - 40, r.bottom);
     }
   });
+
+  // Открыли выпадающий список — раскрашиваем option'ы по текущим «Часы».
+  teacherSelectEl.addEventListener("mousedown", paintTeacherOptions);
+  teacherSelectEl.addEventListener("focus", paintTeacherOptions);
 }
 
 // Обновить карту нагрузки (вызывается при открытии модалки занятия).
@@ -134,8 +167,17 @@ export async function refreshTeacherLoad(weekId) {
   applyHighlight();
 }
 
-// После fillSelect()/смены списка — пересветить выбр значение.
+// После fillSelect()/смены списка — пересветить выбранное значение и все
+// option'ы (список мог быть пересобран поиском/сменой дисциплины).
 export function syncTeacherLoadHighlight() {
   applyHighlight();
   hideHint();
+}
+
+// Вызывается из fillSelect() сразу после пересборки <option> в списке
+// преподавателей: перекрашиваем option'ы по текущей нагрузке и «Часы».
+export function paintTeacherOptionsAfterFill(selectEl) {
+  if (!teacherSelectEl || !selectEl) return;
+  if (selectEl !== teacherSelectEl) return;
+  paintTeacherOptions();
 }

@@ -1391,6 +1391,21 @@ body.dict-modal-dragging {
   box-shadow: 0 0 0 2px rgba(220, 53, 69, 0.15);
 }
 
+/* Подсветка пунктов выпадающего списка преподавателей:
+   зелёный — можно назначить текущую пару (с учётом выбранных «Часы»),
+   красный — лимит недельных часов будет превышен.
+   selected-пункт не перекрашиваем — иначе в свёрнутом select фон
+   становится цвета подсветки и текст читается плохо. */
+#teacherSelect option.teacher-opt-ok:not(:checked) {
+  background-color: #e7fbef;
+  color: #14532d;
+}
+
+#teacherSelect option.teacher-opt-over:not(:checked) {
+  background-color: #fdecec;
+  color: #b91c1c;
+}
+
 /* Поле с подсказкой позиционируем контекст (сама подсказка — fixed у курсора) */
 .field.teacher-field {
   position: relative;

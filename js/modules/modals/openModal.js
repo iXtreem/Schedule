@@ -7,6 +7,7 @@ import {
   initTeacherLoadHint,
   refreshTeacherLoad,
   syncTeacherLoadHighlight,
+  paintTeacherOptionsAfterFill,
 } from "./teachersLoadHint.js";
 
 // Загрузка недельной нагрузки преподавателей (учёт teacher.max_hours при
@@ -311,6 +312,10 @@ export function fillSelect(selectEl, list, placeholder = "— выбери —")
     opt.textContent = item.name;
     selectEl.appendChild(opt);
   }
+
+  // Если пересобрали список преподавателей — сразу раскрашиваем option'ы
+  // по недельной нагрузке (зелёный — можно, красный — превышен лимит часов).
+  paintTeacherOptionsAfterFill(selectEl);
 }
 
 async function loadPlanSubjectsForModal(groupId) {
