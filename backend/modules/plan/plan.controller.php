@@ -4,6 +4,20 @@ require_once __DIR__ . '/../../lib/request.php';
 require_once __DIR__ . '/plan.repo.php';
 require_once __DIR__ . '/plan.fallback.php';
 
+// Запасной вариант для модалки занятия: типы занятий из справочника lesson_type.
+// Если план непустой — сужаем до типов, которые вообще встречаются в плане.
+// В отличие от репозитория plan_hours здесь нет привязки к конкретной связке
+// дисциплина+преподаватель, поэтому часов плана (planned_hours/done_hours)
+// нет и счётчик «выполнено/план» не показывается — тип выбирается свободно,
+// а нагрузка преподавателя ограничивается недельным лимитом teacher.max_hours.
+function planFallbackLessonTypes(mysqli $conn): array {
+  $all = repoAllLessonTypes($conn);
+  if (!repoPlanIsEmpty($conn)) {
+    $all = filterRowsByIds($all, repoPlanLessonTypeIdsUsed($conn));
+  }
+  return $all;
+}
+
 /*
  * Контроллер учебного плана для модалки занятия.
  * ---------------------------------------------------------------------------
@@ -17,6 +31,23 @@ require_once __DIR__ . '/plan.fallback.php';
  */
 function planController($conn, $method, $entity) {
   if ($method !== 'GET') errorJson('Method not allowed', 405);
+
+  // Типы занятий по преподавателю (без привязки к дисциплине): нужны, когда
+  // пользователь выбрал только преподавателя. Берём типы из его плана; если
+  // их нет — запасной список из справочника.
+  if ($entity === 'plan_teacher_lesson_types') {
+    $teacherId = (int)getQuery('teacher_id', 0);
+    if ($teacherId <= 0) errorJson('teacher_id required', 400);
+
+    $rows = repoPlanTeacherLessonTypes(
+      $conn,
+      (int)getQuery('group_id', 0),
+      (int)getQuery('term', 0),
+      $teacherId
+    );
+    sendJson($rows ?: planFallbackLessonTypes($conn));
+    return;
+  }
 
   $groupId = (int)getQuery('group_id', 0);
   $term    = (int)getQuery('term', 0);
@@ -72,11 +103,10 @@ function planController($conn, $method, $entity) {
 
       $rows = repoPlanLessonTypes($conn, $groupId, $term, $subjectId, $teacherId);
       if (!$rows) {
-        $all = repoAllLessonTypes($conn);
-        if (!repoPlanIsEmpty($conn)) {
-          $all = filterRowsByIds($all, repoPlanLessonTypeIdsUsed($conn));
-        }
-        $rows = $all;
+        // Плана по этой связке нет -> показываем типы из справочника БЕЗ
+        // счётчика часов (planned_hours/done_hours = null), чтобы в списке не
+        // появлялось «Лекция (0/0)» и тип можно было выбрать.
+        $rows = planFallbackLessonTypes($conn);
       }
       sendJson($rows);
       return;

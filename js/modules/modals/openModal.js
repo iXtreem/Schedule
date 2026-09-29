@@ -3,6 +3,15 @@ import { api } from "../../LoadFromBD/api.js";
 import { DAY_NAMES } from "../../LoadFromBD/bd.js";
 import { renderTable } from "../schedule/renderTable.js";
 import { filterByName } from "./searchModal.js";
+import {
+  initTeacherLoadHint,
+  refreshTeacherLoad,
+  syncTeacherLoadHighlight,
+} from "./teachersLoadHint.js";
+
+// Загрузка недельной нагрузки преподавателей (учёт teacher.max_hours при
+// ручном редактировании). Состояние: null = ещё не загружено.
+let teacherLoadState = { status: "idle", weekId: null };
 
 const modalOverlay = document.getElementById("modalOverlay");
 const modalClose = document.getElementById("modalClose");
@@ -336,18 +345,13 @@ async function loadPlanTeachersForModal(groupId) {
   fillSelect(teacherSelect, modalTeachers);
 }
 
+// Оставлено для совместимости: теперь загрузка типов идёт через tryLoadTypes()
+// (единая логика: план -> счётчик «выполнено/план», без плана -> справочник
+// без счётчика и без блокировки выбора).
 async function loadPlanTypesForModal(groupId) {
-  const term = Number(termInput.value) || 1;
-  const subjectId = Number(subjectSelect.value);
-  const teacherId = Number(teacherSelect.value);
-
   typeSelect.innerHTML = "";
   modalTypes = [];
-
-  if (!subjectId || !teacherId) return;
-
-  modalTypes = await api.planLessonTypes(groupId, term, subjectId, teacherId);
-  fillSelect(typeSelect, modalTypes);
+  await tryLoadTypes(groupId);
 }
 
 async function reloadWeekLessons() {
@@ -355,9 +359,47 @@ async function reloadWeekLessons() {
   state.lessons = normalizeLessons(raw);
 }
 
+// Загрузить недельную нагрузку преподавателей (учёт teacher.max_hours) для
+// подсветки в модалке. Данные приходят с сервера — фронтенд правила не дублирует.
+async function ensureTeacherLoad(weekId) {
+  if (!weekId) return;
+  teacherLoadState = { status: "loading", weekId };
+  try {
+    await refreshTeacherLoad(weekId);
+    teacherLoadState = { status: "ready", weekId };
+  } catch (e) {
+    console.error("ensureTeacherLoad failed:", e);
+    teacherLoadState = { status: "error", weekId };
+  }
+}
+
+// После сохранения/удаления занятия нагрузка меняется — обновляем цифры,
+// чтобы подсветка «зелёный/красный» оставалась актуальной.
+async function refreshTeacherLoadQuiet() {
+  if (!state.currentWeekId) return;
+  try {
+    await refreshTeacherLoad(state.currentWeekId);
+  } catch (e) {
+    console.error("refreshTeacherLoad failed:", e);
+  }
+}
+
 export async function openModal({ groupId, dayIndex, pairIndex, lessonId }) {
   bindModalSearch();
+  initTeacherLoadHint({
+    teacherSelect,
+    hoursSelect,
+    hint: document.getElementById("teacherLoadHint"),
+  });
   state.currentEdit = { groupId, dayIndex, pairIndex, lessonId };
+
+  // Недельная нагрузка преподавателей: если данные по этой неделе ещё не
+  // загружены — грузим (иначе используем кэш и просто пересвечиваем поле).
+  if (teacherLoadState.weekId !== Number(state.currentWeekId)) {
+    await ensureTeacherLoad(state.currentWeekId);
+  } else {
+    syncTeacherLoadHighlight();
+  }
 
   applyAutoTerm(groupId);
 
@@ -543,8 +585,12 @@ export async function saveLesson() {
     await reloadWeekLessons();
     renderTable();
     closeModal();
+    // Нагрузка недели изменилась — обновляем данные для следующей модалки
+    await refreshTeacherLoadQuiet();
   } catch (e) {
     console.error(e);
+    // Сервер вернул бизнес-ошибку: конфликт пары, недельный лимит часов
+    // преподавателя (teacher.max_hours) или лимит часов учебного плана.
     alert(e?.message || "Ошибка сохранения занятия или превышение часов");
   }
 }
@@ -555,64 +601,86 @@ function formatHours(v) {
   return (Math.round(n * 100) / 100).toString();
 }
 
+// Список типов занятий для селекта.
+//   * planned_hours != null -> добавляем счётчик «выполнено/план» и блокируем
+//     выбор, если по учебному плану остаток <= 0 (ограничение ПО ТИПУ занятия
+//     оставлено, ужесточение по типам добавляется позже);
+//   * planned_hours == null (плана по связке нет / типы из справочника) ->
+//     показываем просто название БЕЗ «(0/0)» и НЕ блокируем выбор: лимит
+//     считается по часам преподавателя за неделю (см. teachersLoadHint.js).
+function renderTypeOptions(types, placeholder = "— выбери тип —") {
+  const list = (types || []).map((t) => {
+    const hasPlan =
+      t.planned_hours !== null &&
+      t.planned_hours !== undefined &&
+      t.planned_hours !== "";
+    const name = String(t.name || "");
+
+    if (!hasPlan) {
+      return { id: t.id, name, _remaining: Infinity, _hasPlan: false };
+    }
+
+    const planned = Number(t.planned_hours ?? 0);
+    const done = Number(t.done_hours ?? 0);
+    return {
+      id: t.id,
+      name: `${name} (${formatHours(done)}/${formatHours(planned)})`,
+      _remaining: planned - done,
+      _hasPlan: true,
+    };
+  });
+
+  fillSelect(typeSelect, list, placeholder);
+
+  for (const opt of typeSelect.options) {
+    if (!opt.value) continue;
+    const t = list.find((x) => String(x.id) === String(opt.value));
+    opt.disabled = Boolean(t && t._hasPlan && t._remaining <= 0.0001);
+  }
+
+  return list;
+}
+
 async function tryLoadTypes(groupId) {
   const term = Number(termInput.value) || 1;
   const subjectId = Number(subjectSelect.value);
   const teacherId = Number(teacherSelect.value);
 
+  // Типы из справочника: без часов плана -> без «(0/0)» и без блокировки
+  const dictTypes = () =>
+    (state.lessonTypes || state.types || []).map((t) => ({
+      id: t.id,
+      name: t.name,
+      planned_hours: null,
+      done_hours: null,
+    }));
+
+  // Ничего не выбрано — показываем все типы из справочника,
+  // чтобы список «— выбери тип —» никогда не был пустым
   if (!subjectId || !teacherId) {
-    // ничего не выбрано — показываем все типы из справочника,
-    // чтобы список «— выбери тип —» никогда не был пустым
-    modalTypes = [];
-    fillSelect(
-      typeSelect,
-      (state.lessonTypes || []).map((t) => ({ id: t.id, name: t.name })),
-      "— выбери тип —",
-    );
+    modalTypes = dictTypes();
+    renderTypeOptions(modalTypes);
     return;
   }
 
   try {
-    modalTypes = await api.planLessonTypes(groupId, term, subjectId, teacherId);
+    modalTypes = subjectId
+      ? await api.planLessonTypes(groupId, term, subjectId, teacherId)
+      : await api.planTeacherLessonTypes(groupId, term, teacherId);
   } catch (e) {
     console.error("planLessonTypes failed:", e);
     modalTypes = [];
   }
 
-  // план пуст / связки в плане нет -> показываем типы из справочника,
+  // план пуст / связки в плане нет -> типы из справочника (без счётчика),
   // иначе поле «Тип занятия» осталось бы пустым (баг из «Справочников»)
   if (!modalTypes.length) {
-    const fallback = (state.lessonTypes || []).map((t) => ({
-      id: t.id,
-      name: t.name,
-    }));
-    fillSelect(typeSelect, fallback, "— выбери тип —");
-    for (const opt of typeSelect.options) {
-      if (opt.value) opt.disabled = false;
-    }
+    modalTypes = dictTypes();
+    renderTypeOptions(modalTypes);
     return;
   }
 
-  const typesForSelect = modalTypes.map((t) => {
-    const done = formatHours(t.done_hours);
-    const planned = formatHours(t.planned_hours);
-    const remaining = Number(t.planned_hours ?? 0) - Number(t.done_hours ?? 0);
-
-    return {
-      id: t.id,
-      name: `${t.name} (${done}/${planned})`,
-      _remaining: remaining,
-    };
-  });
-
-  fillSelect(typeSelect, typesForSelect, "— выбери тип —");
-
-  //запретим выбирать то, где остаток <= 0
-  for (const opt of typeSelect.options) {
-    if (!opt.value) continue;
-    const t = typesForSelect.find((x) => String(x.id) === String(opt.value));
-    if (t && t._remaining <= 0.0001) opt.disabled = true;
-  }
+  renderTypeOptions(modalTypes);
 }
 
 export async function deleteLesson() {
@@ -625,6 +693,8 @@ export async function deleteLesson() {
     await reloadWeekLessons();
     renderTable();
     closeModal();
+    // Часы преподавателя освободились — обновляем недельную нагрузку
+    await refreshTeacherLoadQuiet();
   } catch (e) {
     alert("Ошибка удаления занятия. Смотри консоль.");
     console.error(e);
@@ -703,6 +773,9 @@ teacherSelect.addEventListener("change", async () => {
   // типы всегда сбрасываем
   fillSelect(typeSelect, [], "— выбери тип —");
   modalTypes = [];
+
+  // Пересветить поле по недельной нагрузке (лимит teacher.max_hours)
+  syncTeacherLoadHighlight();
 
   // если преподавателя сняли  возвращаем базовые дисциплины
   if (!teacherId) {

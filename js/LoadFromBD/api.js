@@ -172,6 +172,15 @@ export const api = {
       [],
     ),
 
+  // Типы занятий преподавателя без дисциплины (когда в модалке выбран только
+  // преподаватель). planned_hours = null -> счётчика «(0/0)» нет, тип доступен.
+  planTeacherLessonTypes: (groupId, term, teacherId) =>
+    requestJson(
+      `${API}?entity=plan_teacher_lesson_types&group_id=${groupId || 0}&term=${term || 0}&teacher_id=${teacherId}`,
+      {},
+      [],
+    ),
+
   planTeachersBase: (groupId, term) =>
     requestJson(
       `${API}?entity=plan_teachers_base&group_id=${groupId}&term=${term}`,

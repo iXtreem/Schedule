@@ -1,4 +1,3 @@
-
 <?php
 require_once __DIR__ . '/../../lib/db.php';
 
@@ -155,6 +154,41 @@ function repoEnsureNoTeacherOrRoomConflict($conn, $weekId, $dayOfWeek, $timeSlot
 }
 // Конец функции проверки
 
+// ---------------------------------------------------------------------------
+// Ограничение ОБЩЕЙ недельной нагрузки преподавателя (не по типу занятия!)
+// teacher.max_hours — сколько часов преподаватель может быть занят парами за
+// учебную неделю. В модалке занятия паре можно назначить 1 или 2 часа,
+// поэтому проверяем сумму часов, а не количество пар.
+// Ответ: ['week_hours' => уже поставлено часов, 'max_hours' => лимит]
+// ---------------------------------------------------------------------------
+function repoTeacherWeeklyHours($conn, $teacherId, $weekId, $excludeScheduleId = 0) {
+  $row = dbRow(
+    $conn,
+    "SELECT COALESCE(SUM(COALESCE(s.hours, 0)), 0) AS week_hours
+     FROM schedule_lesson s
+     JOIN week w ON w.id = s.week_id AND w.is_deleted = 0
+     WHERE s.is_deleted = 0
+       AND s.teacher_id = ?
+       AND s.week_id = ?
+       AND (? = 0 OR s.id <> ?)
+       AND DATE_ADD(w.start_date, INTERVAL (s.day_of_week - 1) DAY)
+           BETWEEN w.start_date AND w.end_date",
+    [(int)$teacherId, (int)$weekId, (int)$excludeScheduleId, (int)$excludeScheduleId]
+  );
+
+  $maxHours = (float)dbScalar(
+    $conn,
+    "SELECT COALESCE(max_hours, 36) FROM teacher WHERE id = ? AND is_deleted = 0",
+    [(int)$teacherId],
+    36.0
+  );
+
+  return [
+    'week_hours' => round((float)($row['week_hours'] ?? 0), 2),
+    'max_hours'  => round($maxHours, 2),
+  ];
+}
+
 // Общие правила расчёта часов и проверок для create/update
 function repoLessonPrepareData($conn, $p, $excludeScheduleId = 0) {
   $weekId      = (int)$p['weekId'];
@@ -197,11 +231,25 @@ function repoLessonPrepareData($conn, $p, $excludeScheduleId = 0) {
     $term = isset($p['term']) ? (int)$p['term'] : 0;
     if ($term <= 0) throw new Exception("term required");
 
-    // контроль часов по учебному плану: нельзя поставить больше, чем запланировано
+    $EPS = 0.0001;
+
+    // 1) Ограничение ОБЩЕЙ загрузки преподавателя за неделю (учебный год).
+    //    Считаем суммарные часы всех его пар в этой неделе (1-часовые и
+    //    2-часовые — как есть) против teacher.max_hours. Тип занятия не важен.
+    $load = repoTeacherWeeklyHours($conn, $teacherId, $weekId, $excludeScheduleId);
+    if (($load['week_hours'] + $hours) > ($load['max_hours'] + $EPS)) {
+      $left = max(0.0, $load['max_hours'] - $load['week_hours']);
+      throw new Exception(
+        "Преподаватель перегружен: за неделю уже {$load['week_hours']} ч, "
+        . "лимит {$load['max_hours']} ч, свободно {$left} ч, "
+        . "а ставится {$hours} ч."
+      );
+    }
+
+    // 2) контроль часов по учебному плану: нельзя поставить больше, чем запланировано
     $planned = repoPlannedHours($conn, $groupId, $term, $subjectId, $teacherId, $typeId);
     $done    = repoDoneHours($conn, $groupId, $subjectId, $teacherId, $typeId, $excludeScheduleId);
 
-    $EPS = 0.0001;
     if ($planned > $EPS && ($done + $hours) > ($planned + $EPS)) {
       $left = max(0.0, $planned - $done);
       throw new Exception("Hours limit exceeded: left {$left}, attempted {$hours}.");

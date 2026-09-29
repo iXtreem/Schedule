@@ -44,7 +44,7 @@ function scheduleLessonsController($conn, $method) {
     errorJson('Method not allowed', 405);
 
   } catch (Exception $e) {
-    //это бизнес-ошибка (лимит часов и т.п.) не 500
+    //это бизнес-ошибка (недельный лимит преподавателя, лимит плана и т.п.) не 500
     errorJson($e->getMessage(), 409);
   }
 }
