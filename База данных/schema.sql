@@ -72,6 +72,22 @@ CREATE TABLE IF NOT EXISTS teacher (
   KEY idx_teacher_surname (surname)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
+-- Дисциплины, которые может вести преподаватель -----------------------
+-- Заполняется в окне «⚡ Условия заполнения расписания» → вкладка
+-- «Преподаватели» (кнопка «Дисциплины»). Пустой список = ограничений нет
+-- (преподаватель может вести любую дисциплину). Если список НЕ пуст и
+-- дисциплины в нём нет — занятие помечается красным с подсказкой.
+CREATE TABLE IF NOT EXISTS teacher_discipline (
+  id            INT NOT NULL AUTO_INCREMENT PRIMARY KEY,
+  teacher_id    INT NOT NULL,
+  discipline_id INT NOT NULL,
+  is_deleted    TINYINT(1) NOT NULL DEFAULT 0,
+  UNIQUE KEY uq_teacher_disc (teacher_id, discipline_id),
+  KEY idx_td_teacher (teacher_id),
+  CONSTRAINT fk_td_teacher    FOREIGN KEY (teacher_id)    REFERENCES teacher (id),
+  CONSTRAINT fk_td_discipline FOREIGN KEY (discipline_id) REFERENCES discipline (id)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
 -- Аудитории -----------------------------------------------------------
 CREATE TABLE IF NOT EXISTS room (
   id          INT NOT NULL AUTO_INCREMENT PRIMARY KEY,
