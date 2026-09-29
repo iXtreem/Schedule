@@ -1371,6 +1371,65 @@ body.dict-modal-dragging {
   background: #fdf6ec;
 }
 
+/* Поля «С» / «До» рабочего времени в окне «⚡ Условия заполнения» */
+.autofill-time-input {
+  width: 100px;
+  padding: 4px 8px;
+}
+
+/* Чекбоксы рабочих дней Пн..Вс */
+.autofill-days-cell {
+  white-space: nowrap;
+}
+.autofill-day {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  margin-right: 6px;
+  font-size: 13px;
+  cursor: pointer;
+  user-select: none;
+}
+
+/* ===========================================================================
+   Красная подсветка занятия в таблице преподавателя, если оно попало
+   в нерабочий день или вне рабочего времени преподавателя
+   (js/modules/schedule/teacherSchedule.js + renderTeacherTable.js).
+   Текст подсказки (почему красный) показывается через title.
+   ========================================================================= */
+.teacher-cell.teacher-cell-schedule-warn {
+  background: #fdecea !important;
+  box-shadow: inset 0 0 0 2px #c62828;
+}
+
+.teacher-cell.teacher-cell-schedule-warn .teacher-lesson-meta,
+.teacher-cell.teacher-cell-schedule-warn .teacher-lesson-type {
+  color: #b71c1c;
+}
+
+/* Грубая (ошибочная) строка графика в модалке занятия — тоже красим */
+.schedule-warn-row {
+  outline: 2px solid #c62828;
+  outline-offset: -2px;
+  background: #fdecea;
+}
+
+/* Красная рамка у поля выбора преподавателя, если выбран преподаватель,
+   которого нельзя поставить в эту пару по графику работы
+   (js/modules/modals/teachersLoadHint.js, класс teacher-sched-warn).
+   Всегда красным — даже если недельных часов хватает. */
+#teacherSelect.teacher-sched-warn {
+  border-color: #dc3545 !important;
+  background: #fef2f2;
+  box-shadow: 0 0 0 2px rgba(220, 53, 69, 0.15);
+}
+
+/* Пункты выпадающего списка с нарушением графика работы — красные */
+#teacherSelect option.teacher-opt-sched-warn:not(:checked) {
+  background-color: #fdecec;
+  color: #b91c1c;
+}
+
 /* ===========================================================================
    Подсветка преподавателя в модалке занятия по недельной нагрузке
    (js/modules/modals/teacherLoadHint.js)
