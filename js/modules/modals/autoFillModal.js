@@ -4,7 +4,10 @@
 // мелкие понятные блоки; этот модуль — оболочка окна с вкладками-требованиями.
 //
 // Вкладка 1: «Преподаватели» — максимальная недельная нагрузка каждого
-// преподавателя (таблица teacher, колонка max_hours; по умолчанию 36).
+// преподавателя (таблица teacher, колонка max_hours; по умолчанию 36),
+// рабочие дни Пн–Вс (teacher.working_days), рабочее время «с/до»
+// (teacher.work_start / work_end) и разрешённые дисциплины
+// (кнопка «Дисциплины», таблица teacher_discipline).
 // Список преподавателей берётся из базы данных через api.teachers().
 //
 // Следующие вкладки (Группы, Кабинеты, Дни и т.д.) будут добавляться сюда
@@ -32,9 +35,14 @@ const bulkAllDaysOffBtn = document.getElementById("autoFillAllDaysOffBtn");
 let isBound = false;
 let activeTab = "teachers";
 
-// Локальные правки: { [teacherId]: { max_hours?, working_days?, work_start?, work_end? } }.
+// Локальные правки: { [teacherId]: { max_hours?, working_days?, work_start?,
+//                                     work_end?, discipline_ids? } }.
 // Пока поля нет — используется то, что пришло из БД (или значения по умолчанию).
 let scheduleEdits = {};
+
+// Права на редактирование дисциплин (кнопка «Дисциплины»): пока попап открыт,
+// чекбоксы пишутся прямо в scheduleEdits[id].discipline_ids.
+let discPopupTeacherId = null;
 
 const TABS = [
   { key: "teachers", title: "Преподаватели" },
@@ -114,6 +122,25 @@ function getWorkEnd(teacher) {
   return normTime(teacher.work_end);
 }
 
+// Разрешённые дисциплины преподавателя: список id. Пустой список = ограничений
+// нет (может вести любую дисциплину). Таблица teacher_discipline.
+function getAllowedDisc(teacher) {
+  const id = Number(teacher.id);
+  if (Array.isArray(scheduleEdits[id]?.discipline_ids))
+    return scheduleEdits[id].discipline_ids;
+  const raw = teacher.allowed_disciplines ?? teacher.discipline_ids ?? [];
+  if (Array.isArray(raw)) {
+    return raw.map((v) => Number(v)).filter((v) => Number.isFinite(v) && v > 0);
+  }
+  if (typeof raw === "string" && raw.trim()) {
+    return raw
+      .split(/[,;\s]+/)
+      .map((v) => Number(v))
+      .filter((v) => Number.isFinite(v) && v > 0);
+  }
+  return [];
+}
+
 function isRowEdited(t) {
   const e = scheduleEdits[Number(t.id)];
   if (!e) return false;
@@ -121,7 +148,9 @@ function isRowEdited(t) {
     (e.max_hours !== undefined && e.max_hours !== normHours(t.max_hours ?? DEFAULT_MAX_HOURS)) ||
     (e.working_days !== undefined && e.working_days !== normDays(t.working_days)) ||
     (e.work_start !== undefined && e.work_start !== normTime(t.work_start)) ||
-    (e.work_end !== undefined && e.work_end !== normTime(t.work_end))
+    (e.work_end !== undefined && e.work_end !== normTime(t.work_end)) ||
+    (e.discipline_ids !== undefined &&
+      e.discipline_ids.join(",") !== getAllowedDisc(t).join(","))
   );
 }
 
@@ -174,11 +203,12 @@ function renderTeacherTable() {
         <th class="autofill-days-head">Рабочие дни (Пн–Вс)</th>
         <th style="width: 110px;">С</th>
         <th style="width: 110px;">До</th>
+        <th style="width: 150px;">Дисциплины</th>
       </tr>
     </thead>`;
 
   if (!rows.length) {
-    tableEl.innerHTML = `${head}<tbody><tr><td colspan="5" class="muted">
+    tableEl.innerHTML = `${head}<tbody><tr><td colspan="6" class="muted">
         Преподаватели не найдены. Добавьте их в справочнике «Преподаватели».</td></tr></tbody>`;
     return;
   }
@@ -230,6 +260,9 @@ function renderTeacherTable() {
             value="${getWorkEnd(t)}"
           />
         </td>
+        <td>
+          ${renderDiscCell(t)}
+        </td>
       </tr>`;
     })
     .join("");
@@ -245,6 +278,121 @@ function switchTab(key) {
   if (soonPane) soonPane.classList.toggle("hidden", teachersActive);
 }
 
+// --- Дисциплины преподавателя (таблица teacher_discipline) -------------------
+// Пустой список = ограничений нет (преподаватель может вести любую
+// дисциплину). Если список НЕ пуст и дисциплины в нём нет — занятие будет
+// помечено красным с подсказкой (js/modules/schedule/teacherSchedule.js).
+
+function subjectNameById(id) {
+  const s = (state.subjects || []).find((x) => Number(x.id) === Number(id));
+  return String(s?.name || s?.short_name || `№${id}`);
+}
+
+// Кнопка-счётчик в таблице: «Дисциплины: все» или «Дисциплины: N»
+function renderDiscCell(t) {
+  const allowed = getAllowedDisc(t);
+  const edited = Array.isArray(scheduleEdits[Number(t.id)]?.discipline_ids);
+  const label = allowed.length ? `Дисциплины: ${allowed.length}` : "Дисциплины: все";
+  const title = allowed.length
+    ? `Может вести: ${allowed.map(subjectNameById).join(", ")}`
+    : "Ограничений нет — может вести любую дисциплину. Нажмите, чтобы выбрать.";
+  return `
+    <button type="button"
+            class="btn btn-outline autofill-disc-btn ${edited ? "is-edited" : ""}"
+            data-disc-open="${Number(t.id)}"
+            title="${escapeHtml(title)}">${escapeHtml(label)}</button>
+  `;
+}
+
+function discPopupEl() {
+  let el = document.getElementById("autoFillDiscPopup");
+  if (!el) {
+    el = document.createElement("div");
+    el.id = "autoFillDiscPopup";
+    el.className = "autofill-disc-popup hidden";
+    document.body.appendChild(el);
+  }
+  return el;
+}
+
+function closeDiscPopup() {
+  discPopupTeacherId = null;
+  const el = discPopupEl();
+  el.classList.add("hidden");
+  el.innerHTML = "";
+}
+
+function openDiscPopup(teacherId, anchorBtn) {
+  const teacher = (state.teachers || []).find(
+    (t) => Number(t.id) === Number(teacherId),
+  );
+  if (!teacher) return;
+  discPopupTeacherId = Number(teacherId);
+
+  const allowed = new Set(getAllowedDisc(teacher));
+  const subjects = [...(state.subjects || [])].sort((a, b) =>
+    String(a.name || "").localeCompare(String(b.name || ""), "ru"),
+  );
+
+  const items = subjects.length
+    ? subjects
+        .map(
+          (s) => `
+        <label class="autofill-disc-item">
+          <input type="checkbox" data-disc-id="${Number(s.id)}"
+                 ${allowed.has(Number(s.id)) ? "checked" : ""} />
+          <span>${escapeHtml(s.name || s.short_name || "")}</span>
+        </label>`,
+        )
+        .join("")
+    : `<div class="muted">Список дисциплин пуст — добавьте дисциплины в справочнике.</div>`;
+
+  const el = discPopupEl();
+  el.innerHTML = `
+    <div class="autofill-disc-head">
+      <b>${escapeHtml(teacher.name || "")}</b> — какие дисциплины может вести
+      <button type="button" class="autofill-disc-close" title="Закрыть">×</button>
+    </div>
+    <div class="autofill-disc-hint muted">
+      Ничего не отмечено = ограничений нет (можно любую дисциплину).
+      Отметьте нужные — остальные будут помечаться красным в расписании.
+    </div>
+    <div class="autofill-disc-list">${items}</div>
+    <div class="autofill-disc-actions">
+      <button type="button" class="btn btn-outline" data-disc-clear>Снять все</button>
+      <button type="button" class="btn btn-outline" data-disc-all>Отметить все</button>
+    </div>
+  `;
+  el.classList.remove("hidden");
+
+  // Позиционируем рядом с кнопкой
+  const r = anchorBtn.getBoundingClientRect();
+  const w = 340;
+  let left = Math.min(r.left, window.innerWidth - w - 12);
+  left = Math.max(8, left);
+  el.style.left = `${left}px`;
+  el.style.top = `${Math.min(r.bottom + 6, window.innerHeight - 240)}px`;
+  el.style.width = `${w}px`;
+}
+
+function syncDiscEditFromPopup() {
+  if (discPopupTeacherId == null) return;
+  const el = discPopupEl();
+  const ids = [...el.querySelectorAll("input[data-disc-id]")]
+    .filter((c) => c.checked)
+    .map((c) => Number(c.dataset.discId))
+    .filter((v) => Number.isFinite(v) && v > 0);
+  const edit = scheduleEdits[discPopupTeacherId] || (scheduleEdits[discPopupTeacherId] = {});
+  edit.discipline_ids = ids;
+  setStatus("Есть несохранённые изменения.");
+  // Обновляем кнопку-счётчик в строке, не перерисовывая всю таблицу
+  const btn = tableEl?.querySelector(`[data-disc-open="${discPopupTeacherId}"]`);
+  if (btn) {
+    btn.textContent = ids.length ? `Дисциплины: ${ids.length}` : "Дисциплины: все";
+    btn.classList.add("is-edited");
+  }
+}
+
 async function refreshTeachersFromDb() {
   // Освежаем список преподавателей из таблицы teacher (на случай, если
   // справочник меняли, пока окно было открыто).
@@ -253,26 +401,41 @@ async function refreshTeachersFromDb() {
 }
 
 async function save() {
-  const items = Object.entries(scheduleEdits).map(([id, e]) => ({
-    id: Number(id),
-    ...(e.max_hours !== undefined ? { max_hours: e.max_hours } : {}),
-    ...(e.working_days !== undefined ? { working_days: e.working_days } : {}),
-    ...(e.work_start !== undefined ? { work_start: e.work_start } : {}),
-    ...(e.work_end !== undefined ? { work_end: e.work_end } : {}),
-  }));
+  const items = Object.entries(scheduleEdits)
+    .filter(([id, e]) => e.max_hours !== undefined ||
+                         e.working_days !== undefined ||
+                         e.work_start !== undefined ||
+                         e.work_end !== undefined)
+    .map(([id, e]) => ({
+      id: Number(id),
+      ...(e.max_hours !== undefined ? { max_hours: e.max_hours } : {}),
+      ...(e.working_days !== undefined ? { working_days: e.working_days } : {}),
+      ...(e.work_start !== undefined ? { work_start: e.work_start } : {}),
+      ...(e.work_end !== undefined ? { work_end: e.work_end } : {}),
+    }));
 
-  if (!items.length) {
+  // Разрешённые дисциплины (таблица teacher_discipline): отдельный endpoint,
+  // пустой список = ограничений нет.
+  const discItems = Object.entries(scheduleEdits)
+    .filter(([, e]) => Array.isArray(e.discipline_ids))
+    .map(([id, e]) => ({ teacher_id: Number(id), discipline_ids: e.discipline_ids }));
+
+  if (!items.length && !discItems.length) {
     setStatus("Изменений нет — сохранять нечего.");
     return;
   }
 
   try {
     setStatus("Сохранение…");
-    await api.saveTeacherHours(items);
+    if (items.length) await api.saveTeacherHours(items);
+    if (discItems.length) await api.saveTeacherDisciplines(discItems);
     scheduleEdits = {}; // все правки записаны в БД
+    closeDiscPopup();
     await refreshTeachersFromDb();
     renderTeacherTable();
-    setStatus(`Сохранено изменений: ${items.length}.`);
+    setStatus(
+      `Сохранено изменений: ${items.length + discItems.length}.`
+    );
   } catch (err) {
     console.error("Не удалось сохранить настройки преподавателей:", err);
     setStatus(`Ошибка сохранения: ${err?.message || err}`, true);

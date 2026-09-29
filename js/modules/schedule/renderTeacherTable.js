@@ -103,11 +103,13 @@ export function renderTeacherTable() {
           slotKey(Number(teacher.id), dayOfWeek, timeSlot),
         );
 
-        // Проверка графика работы преподавателя (окно «⚡ Условия заполнения»):
-        // если занятие попало в нерабочий день или вне рабочего времени —
-        // помечаем ячейку красным и показываем подсказку.
+        // Проверка условий преподавателя (окно «⚡ Условия заполнения»):
+        // нерабочий день / вне рабочего времени / недозволенная дисциплина —
+        // помечаем ячейку красным; подсказка суммирует ВСЕ нарушения сразу.
         const schedRes = lesson
-          ? checkTeacherSchedule(teacher.id, dayOfWeek, timeSlot, date)
+          ? checkTeacherSchedule(teacher.id, dayOfWeek, timeSlot, date, {
+              subjectId: Number(lesson.subjectId || 0),
+            })
           : null;
         const schedWarn =
           schedRes && !schedRes.ok

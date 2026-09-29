@@ -16,6 +16,7 @@ import { api } from "../../LoadFromBD/api.js";
 import { state } from "../../../app.js";
 import {
   checkTeacherSchedule,
+  checkDisciplineForTeacher,
   scheduleProblemText,
 } from "../schedule/teacherSchedule.js";
 
@@ -34,6 +35,14 @@ let hoursSelectEl = null;
 
 // id -> { max_hours, week_hours }; обновляется при каждом открытии модалки
 let loadByTeacherId = new Map();
+
+// Список преподавателей в модалке занятия — для суммарной подсказки (часы +
+// график + дисциплина). Ставится из syncTeacherLoadHighlight() (openModal.js).
+let teacherOptionsEl = null;
+
+export function setTeacherSelectEl(el) {
+  if (el && el !== teacherSelectEl) teacherOptionsEl = el;
+}
 
 function fmt(n) {
   const v = Number(n || 0);
@@ -83,47 +92,88 @@ function currentPairSlot() {
   return { dayOfWeek: dow, timeSlot: pairIndex + 1 };
 }
 
+// Дисциплина, выбранная сейчас в модалке занятия (для проверки «не ведёт
+// эту дисциплину»). Берём id из <select id="subjectSelect">.
+function currentSubjectId() {
+  const el = document.getElementById("subjectSelect");
+  return Number(el?.value || 0);
+}
+
+// Полная проверка условий преподавателя для текущей пары модалки:
+// рабочий день + рабочее время + разрешённые дисциплины. Возвращает список
+// нарушений (пустой, если всё в порядке) — подсказка суммирует ВСЕ сразу.
+function scheduleProblemsFor(teacherId) {
+  if (!teacherId) return [];
+  const slot = currentPairSlot();
+  const subjectId = currentSubjectId();
+  if (!slot) {
+    // Нет привязки к паре — проверяем только дисциплину
+    return checkDisciplineForTeacher(teacherId, subjectId).problems;
+  }
+  const res = checkTeacherSchedule(teacherId, slot.dayOfWeek, slot.timeSlot, undefined, {
+    subjectId,
+  });
+  return res.problems || [];
+}
+
 // Проверка графика работы для преподавателя и текущей пары модалки.
 function scheduleCheckFor(teacherId) {
-  const slot = currentPairSlot();
-  if (!slot || !teacherId) return null;
-  const res = checkTeacherSchedule(teacherId, slot.dayOfWeek, slot.timeSlot);
-  if (res.ok) return null;
+  const problems = scheduleProblemsFor(teacherId);
+  if (!problems.length) return null;
   const name =
     teacherSelectEl?.options[teacherSelectEl?.selectedIndex]?.textContent || "";
-  return scheduleProblemText(name, res);
+  return scheduleProblemText(name, { ok: false, problems });
+}
+
+// Полный список нарушений условий преподавателя (для confirm при сохранении
+// занятия в openModal.js): нерабочий день / вне рабочего времени / недозво-
+// ленная дисциплина — все сразу.
+export function teacherConditionProblems(teacherId) {
+  return scheduleProblemsFor(teacherId);
 }
 
 function scheduleCheckForOption(teacherId) {
-  const slot = currentPairSlot();
-  if (!slot || !teacherId) return null;
-  const res = checkTeacherSchedule(teacherId, slot.dayOfWeek, slot.timeSlot);
-  if (res.ok) return null;
+  const problems = scheduleProblemsFor(teacherId);
+  if (!problems.length) return null;
   const t = (state.teachers || []).find((x) => Number(x.id) === Number(teacherId));
-  return scheduleProblemText(String(t?.name || ""), res);
+  return scheduleProblemText(String(t?.name || ""), { ok: false, problems });
 }
 
 // Подсветка всех option в списке преподавателей: зелёный — можно назначить
 // текущую пару в пределах лимита, красный — нельзя (превышение часов
-// ИЛИ нарушение графика работы — дни/часы из «⚡ Условия заполнения»).
+// ИЛИ нарушение условий из «⚡ Условия заполнения»: дни/часы/дисциплины).
+// Подсказка title суммирует ВСЕ найденные нарушения сразу.
 function paintTeacherOptions() {
-  if (!teacherSelectEl) return;
   const extra = currentExtraHours();
-  for (const opt of teacherSelectEl.options) {
-    opt.classList.remove(OPT_OK_CLASS, OPT_OVER_CLASS, OPT_SCHED_WARN_CLASS);
-    if (!opt.value) continue; // плейсхолдер «— выбери преподавателя —»
-    const schedWarn = scheduleCheckForOption(opt.value);
-    if (schedWarn) {
-      opt.classList.add(OPT_SCHED_WARN_CLASS);
-      opt.title = schedWarn;
-      continue;
+  // Красим и основной список модалки, и выпадающий список поиска (если открыт)
+  for (const sel of [teacherSelectEl, teacherOptionsEl]) {
+    if (!sel) continue;
+    for (const opt of sel.options) {
+      opt.classList.remove(OPT_OK_CLASS, OPT_OVER_CLASS, OPT_SCHED_WARN_CLASS);
+      opt.title = "";
+      if (!opt.value) continue; // плейсхолдер «— выбери преподавателя —»
+      const problems = scheduleProblemsFor(opt.value);
+      const st = computeStateFor(opt.value, extra);
+      const over = Boolean(st?.over);
+      const parts = [];
+      if (problems.length) {
+        // нарушение условий — всегда красным, даже если часов хватает
+        opt.classList.add(OPT_SCHED_WARN_CLASS);
+        parts.push(`нарушение условий: ${problems.join("; ")}`);
+      } else if (st) {
+        opt.classList.add(over ? OPT_OVER_CLASS : OPT_OK_CLASS);
+      }
+      if (st) {
+        parts.push(
+          over
+            ? `за неделю ${fmt(st.total)} ч > лимита ${fmt(st.limit)} ч`
+            : `за неделю ${fmt(st.total)} ч из ${fmt(st.limit)} ч`,
+        );
+      }
+      if (parts.length) {
+        opt.title = `⚠ ${String(opt.textContent || "").trim()}: ${parts.join(" · ")}`;
+      }
     }
-    const st = computeStateFor(opt.value, extra);
-    if (!st) continue; // нет данных о нагрузке — не красим
-    opt.classList.add(st.over ? OPT_OVER_CLASS : OPT_OK_CLASS);
-    opt.title = st.over
-      ? `${opt.textContent}: ${fmt(st.total)} ч > лимита ${fmt(st.limit)} ч`
-      : `${opt.textContent}: ${fmt(st.total)} ч из ${fmt(st.limit)} ч`;
   }
 }
 
