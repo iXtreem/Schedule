@@ -71,10 +71,20 @@ function normDays(value) {
   return s.length === 7 ? s : "1111111";
 }
 
-// "HH:MM" или "" (без ограничения)
+// "HH:MM" или "" (без ограничения).
+// Важно: MySQL TIME в JSON приходит как "08:30:00" (с секундами), а input
+// type="time" step="60" понимает только "HH:MM". Без отсечения секунд поле
+// после сохранения сбрасывалось к пустому значению («--:-- по --:--»).
 function normTime(value) {
   const v = String(value ?? "").trim();
-  return /^\d{1,2}:\d{2}$/.test(v) ? v : "";
+  const m = v.match(/^(\d{1,2}):(\d{2})(:\d{2})?$/);
+  if (!m) return "";
+  const h = Number(m[1]);
+  const min = Number(m[2]);
+  if (!Number.isFinite(h) || !Number.isFinite(min) || h > 23 || min > 59) {
+    return "";
+  }
+  return `${String(h).padStart(2, "0")}:${String(min).padStart(2, "0")}`;
 }
 
 function getHours(teacher) {
