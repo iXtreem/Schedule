@@ -7,8 +7,13 @@
  *   work_start / work_end — рабочее время («со скольки до скольки»),
  *                          NULL/пусто — ограничение не задано;
  *   allowed_disciplines — список id дисциплин, которые преподаватель МОЖЕТ
- *                          вести (таблица teacher_discipline). Пустой список =
- *                          ограничений нет (можно любую дисциплину).
+ *                          вести (таблица teacher_discipline). По умолчанию
+ *                          список пуст → преподаватель НЕ ведёт ни одну
+ *                          дисциплину («Дисциплины: none»); нужные предметы
+ *                          включаются кнопкой «Дисциплины» во вкладке
+ *                          «Преподаватели» окна «⚡ Условия заполнения».
+ *   hasDisciplineList(teacher) — есть ли у преподавателя непустой набор
+ *                          дисциплин (для фильтрации списков в модалке).
  *
  * Модуль используют:
  *   • renderTeacherTable.js — красит занятую ячейку красным, если занятие
@@ -118,11 +123,13 @@ export function checkTeacherSchedule(teacherId, dayOfWeek, timeSlot, date, optio
 
   // 3) Разрешена ли преподавателю эта дисциплина
   //    (окно «⚡ Условия заполнения» → вкладка «Преподаватели» → «Дисциплины»,
-  //     таблица teacher_discipline). Пустой список = ограничений нет.
+  //     таблица teacher_discipline). По умолчанию список пуст — преподаватель
+  //     НЕ ведёт ни одну дисциплину, поэтому любая выбранная дисциплина
+  //     помечается красным, пока нужные предметы не включены.
   const subjectId = Number(options?.subjectId ?? 0);
   if (subjectId > 0) {
     const allowed = getAllowedDisciplines(teacher);
-    if (allowed.length && !allowed.includes(subjectId)) {
+    if (!allowed.includes(subjectId)) {
       const subj = (state.subjects || []).find(
         (s) => Number(s.id) === subjectId,
       );
@@ -135,6 +142,9 @@ export function checkTeacherSchedule(teacherId, dayOfWeek, timeSlot, date, optio
 }
 
 // Список id дисциплин, которые может вести преподаватель.
+// По умолчанию список пуст — значит преподаватель НЕ ведёт ни одну
+// дисциплину (все предметы «выключены», включаются кнопкой «Дисциплины»
+// во вкладке «Преподаватели» окна «⚡ Условия заполнения расписания»).
 // Поддерживаются оба формата из БД: массив чисел (allowed_disciplines)
 // и строка "5,7,12" (discipline_ids) — на случай прямого чтения таблицы.
 export function getAllowedDisciplines(teacherOrId) {
@@ -159,13 +169,23 @@ export function getAllowedDisciplines(teacherOrId) {
   return [];
 }
 
-// Можно ли преподавателю вести данную дисциплину (пустой список = всегда да).
+// Есть ли у преподавателя включённые дисциплины (непустой набор).
+// false — «Дисциплины: none», преподаватель не ведёт ни один предмет;
+// используется модалкой занятия, чтобы показывать в списке только тех,
+// кто ведёт выбранную дисциплину.
+export function hasDisciplineList(teacherOrId) {
+  return getAllowedDisciplines(teacherOrId).length > 0;
+}
+
+// Можно ли преподавателю вести данную дисциплину.
+// По умолчанию у преподавателя НИ ОДНА дисциплина не включена (кнопка
+// «Дисциплины» во вкладке «Преподаватели» окна «⚡ Условия заполнения»),
+// поэтому пустой список = вести нельзя ничего. Дисциплина с неизвестным
+// id (0/пусто) не проверяется — возврат true, чтобы не мешать форме.
 export function canTeachDiscipline(teacherOrId, subjectId) {
-  const allowed = getAllowedDisciplines(teacherOrId);
   const sid = Number(subjectId);
   if (!sid || sid <= 0) return true; // дисциплина неизвестна — не мешаем
-  if (!allowed.length) return true;  // ограничений нет
-  return allowed.includes(sid);
+  return getAllowedDisciplines(teacherOrId).includes(sid);
 }
 
 function fmtHM(minutes) {
@@ -191,13 +211,14 @@ export function scheduleProblemText(teacherName, res, kind = "schedule") {
 // checkTeacherSchedule + checkDisciplineForTeacher и показывает один текст.
 
 // Проверка «может ли преподаватель вести дисциплину» без привязки ко дню.
+// По умолчанию ни одна дисциплина не включена → преподаватель не ведёт ничего.
 // Возвращает { ok, problems: [тексты] } — как checkTeacherSchedule.
 export function checkDisciplineForTeacher(teacherId, subjectId) {
   const teacher = teacherById(teacherId);
   const sid = Number(subjectId);
   if (!teacher || !sid || sid <= 0) return { ok: true, problems: [] };
   const allowed = getAllowedDisciplines(teacher);
-  if (!allowed.length || allowed.includes(sid)) return { ok: true, problems: [] };
+  if (allowed.includes(sid)) return { ok: true, problems: [] };
   const subj = (state.subjects || []).find((s) => Number(s.id) === sid);
   const name = String(subj?.name || subj?.short_name || `№${sid}`);
   return { ok: false, problems: [`не ведёт дисциплину «${name}»`] };

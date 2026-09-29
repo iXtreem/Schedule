@@ -428,6 +428,10 @@
               />
               <label class="label" for="teacherSelect">Преподаватель</label>
               <select id="teacherSelect" class="select"></select>
+              <!-- Отметка «ведёт ли преподаватель выбранную дисциплину»
+                   (окно «⚡ Условия заполнения» → «Преподаватели» → «Дисциплины»).
+                   Текст ставит js/modules/modals/teachersLoadHint.js -->
+              <div id="teacherDisciplineFlag" class="teacher-disc-flag hidden"></div>
               <!-- Подсказка у курсора о недельной нагрузке преподавателя -->
               <div id="teacherLoadHint" class="teacher-load-hint hidden"></div>
             </div>
