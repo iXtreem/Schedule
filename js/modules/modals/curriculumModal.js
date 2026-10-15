@@ -40,8 +40,7 @@ const panes = () => ({
   disciplines: $id("currPaneDisciplines"),
 });
 
-// Фильтры списка карточек
-const filterCourse = () => $id("currFilterCourse");
+// Фильтры списка карточек (фильтр по курсам убран — семестры 1..8 его покрывают)
 const filterTerm = () => $id("currFilterTerm");
 const filterDept = () => $id("currFilterDept");
 const searchInput = () => $id("currSearch");
@@ -161,15 +160,7 @@ async function loadMeta(force = false) {
 function fillStaticSelects() {
   if (!meta) return;
 
-  // Фильтры: курсы 1..4, семестры 1..8, кафедры
-  if (filterCourse() && filterCourse().options.length <= 1) {
-    for (let c = 1; c <= 4; c++) {
-      filterCourse().insertAdjacentHTML(
-        "beforeend",
-        `<option value="${c}">Курс ${c}</option>`
-      );
-    }
-  }
+  // Фильтры: семестры 1..8, кафедры (поиск по курсам убран — достаточно семестров)
   if (filterTerm() && filterTerm().options.length <= 1) {
     for (let t = 1; t <= 8; t++) {
       filterTerm().insertAdjacentHTML(
@@ -207,7 +198,6 @@ function fillStaticSelects() {
 async function reloadCards() {
   if (!meta) return;
   cardsCache = await api.currCards({
-    course: filterCourse()?.value || "",
     term: filterTerm()?.value || "",
     departmentId: filterDept()?.value || "",
     search: searchInput()?.value.trim() || "",
@@ -583,7 +573,7 @@ function bindInnerHandlers() {
   });
 
   // ---- карточки: фильтры, кнопки, форма
-  for (const el of [filterCourse(), filterTerm(), filterDept()]) {
+  for (const el of [filterTerm(), filterDept()]) {
     el?.addEventListener("change", () => guard(() => reloadCards()));
   }
   let searchTimer = null;
