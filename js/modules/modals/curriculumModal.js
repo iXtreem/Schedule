@@ -122,9 +122,8 @@ async function guard(fn) {
   try {
     await fn();
   } catch (e) {
-    console.error(e);
-    setStatus("");
-    alert(e?.message || "Ошибка учебного плана");
+    console.error("curriculumModal:", e);
+    setStatus("Ошибка: " + (e?.message || e));
   }
 }
 
@@ -495,14 +494,26 @@ function bindOnce() {
   }
 
   btn.addEventListener("click", async () => {
-    const ov = overlay();
+    // 1. Окно ОБЯЗАТЕЛЬНО показываем СРАЗУ, до любых сетевых запросов.
+    //    Раньше при любой ошибке загрузки (500 на сервере, ошибка в JS)
+    //    пользователь видел лишь «нажатие ничего не делает» — теперь окно
+    //    откроется всегда, а проблемы покажем внутри него и в консоли.
+    let ov = overlay();
     if (!ov) {
-      alert("Не найдено окно учебного плана (#currOverlay) в index.html.");
-      return;
+      // Страховка: если index.html почему-то не отдан браузером целиком
+      // (кэш, битый HTML), пересобираем обработчики и пробуем ещё раз.
+      console.error("curriculumModal: #currOverlay не найден — перевязываю обработчики");
+      isBound = false;
+      bindOnce();
+      ov = overlay();
+      if (!ov) {
+        alert("Не найдено окно учебного плана (#currOverlay) в index.html. Обновите страницу (Ctrl+F5).");
+        return;
+      }
     }
     ov.classList.remove("hidden");
     setStatus("Загрузка учебного плана...");
-    await guard(async () => {
+    try {
       await loadMeta(true);
       await Promise.all([
         reloadCards(),
@@ -512,7 +523,12 @@ function bindOnce() {
       ]);
       renderTabs();
       setStatus("");
-    });
+    } catch (e) {
+      console.error("Учебный план: ошибка загрузки данных:", e);
+      setStatus("Не удалось загрузить данные: " + (e?.message || e));
+      // Вкладки всё равно рисуем — окно остаётся рабочим.
+      try { renderTabs(); } catch (_) {}
+    }
   });
 
   const close = () => {
@@ -765,5 +781,40 @@ function bindOnce() {
 }
 
 export function initCurriculumModal() {
-  bindOnce();
+  // Привязываем обработчик кнопки через ДелеГИРОВАНИЕ на document:
+  // клик по #currBtn будет перехвачен даже если модуль загрузился раньше
+  // кнопки или DOM ещё не готов.
+  if (!isBound) {
+    isBound = true;
+    document.addEventListener("click", (e) => {
+      const btn = e.target.closest("#currBtn");
+      if (btn) openModal();
+    });
+  }
+}
+
+async function openModal() {
+  let ov = overlay();
+  if (!ov) {
+    console.error("curriculumModal: #currOverlay не найден в index.html");
+    alert("Не найдено окно учебного плана (#currOverlay). Обновите страницу (Ctrl+F5).");
+    return;
+  }
+  ov.classList.remove("hidden");
+  setStatus("Загрузка учебного плана...");
+  try {
+    await loadMeta(true);
+    await Promise.all([
+      reloadCards(),
+      reloadDepartments(),
+      reloadKinds(),
+      reloadDisciplines(),
+    ]);
+    renderTabs();
+    setStatus("");
+  } catch (e) {
+    console.error("Учебный план: ошибка загрузки данных:", e);
+    setStatus("Не удалось загрузить данные: " + (e?.message || e));
+    try { renderTabs(); } catch (_) {}
+  }
 }
