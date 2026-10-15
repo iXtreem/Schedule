@@ -58,8 +58,22 @@ function repoCurrDepartmentDelete(mysqli $conn, int $id): void {
 
 function repoCurrActivityKinds(mysqli $conn): array {
   $t = planTab('activity_kind');
-  return dbAll($conn, "SELECT id, name, short_name, sort_order FROM {$t}
+  return dbAll($conn, "SELECT id, name, short_name, sort_order, lesson_type_id FROM {$t}
                       WHERE is_deleted = 0 ORDER BY sort_order, name");
+}
+
+/*
+ * Явная связь «вид деятельности <-> тип занятия» (lesson_type_id).
+ * Если в карточке запроса поле не прислали — оставляем текущее значение.
+ */
+function repoCurrNormalizeLessonTypeId(mysqli $conn, $body): ?int {
+  if (!array_key_exists('lesson_type_id', $body) &&
+      !array_key_exists('lessonTypeId', $body)) {
+    return -1; // «не трогать»
+  }
+  $v = $body['lesson_type_id'] ?? $body['lessonTypeId'] ?? null;
+  if ($v === null || $v === '' || (int)$v <= 0) return null;
+  return (int)$v;
 }
 
 function repoCurrActivityKindSave(mysqli $conn, ?int $id, $body): int {
@@ -68,14 +82,22 @@ function repoCurrActivityKindSave(mysqli $conn, ?int $id, $body): int {
   if ($name === '') throw new Exception('Название вида деятельности обязательно');
   $short  = trim((string)($body['short_name'] ?? '')) ?: null;
   $sort   = (int)($body['sort_order'] ?? 0);
+  $ltid   = repoCurrNormalizeLessonTypeId($conn, $body);
 
   if ($id && $id > 0) {
-    dbExec($conn, "UPDATE {$t} SET name = ?, short_name = ?, sort_order = ? WHERE id = ?",
-      [$name, $short, $sort, $id]);
+    if ($ltid === -1) { // поле не прислали — не меняем связь
+      dbExec($conn, "UPDATE {$t} SET name = ?, short_name = ?, sort_order = ? WHERE id = ?",
+        [$name, $short, $sort, $id]);
+    } else {
+      dbExec($conn, "UPDATE {$t} SET name = ?, short_name = ?, sort_order = ?, lesson_type_id = ? WHERE id = ?",
+        [$name, $short, $sort, $ltid, $id]);
+    }
     return $id;
   }
-  return dbInsert($conn, "INSERT INTO {$t} (name, short_name, sort_order) VALUES (?, ?, ?)",
-    [$name, $short, $sort]);
+  $newId = dbInsert($conn,
+    "INSERT INTO {$t} (name, short_name, sort_order, lesson_type_id) VALUES (?, ?, ?, ?)",
+    [$name, $short, $sort, $ltid === -1 ? null : $ltid]);
+  return $newId;
 }
 
 function repoCurrActivityKindDelete(mysqli $conn, int $id): void {
@@ -470,6 +492,7 @@ function repoCurrGroupTermGrid(mysqli $conn, int $groupId, int $term): array {
             c.course AS course,
             COALESCE({$mp}d.name, '(нет в справочнике)') AS discipline_name,
             ch.activity_kind_id, ak.name AS kind_name, ak.short_name,
+            ak.lesson_type_id,
             ch.hours
      FROM {$curr} c
      JOIN {$dm} dm ON dm.id = c.discipline_id AND dm.is_deleted = 0
@@ -480,6 +503,19 @@ function repoCurrGroupTermGrid(mysqli $conn, int $groupId, int $term): array {
      WHERE c.term = ? AND c.is_deleted = 0
      ORDER BY discipline_name, ak.sort_order",
     [$groupId, $term]);
+}
+
+/*
+ * Карта явных связей «вид деятельности -> тип занятия» из таблицы плана.
+ * Возвращает [activity_kind_id => lesson_type_id] только для непустых связей.
+ */
+function repoCurrKindLessonTypeMap(mysqli $planConn): array {
+  $map = [];
+  foreach (repoCurrActivityKinds($planConn) as $k) {
+    $lt = isset($k['lesson_type_id']) ? (int)$k['lesson_type_id'] : 0;
+    if ($lt > 0) $map[(int)$k['id']] = $lt;
+  }
+  return $map;
 }
 
 // Вид контроля по группе/семестру (для отображения «Экзамен/Зачет» в модалке)
@@ -537,10 +573,31 @@ function currKindMatchesLessonType(string $kindName, string $shortName, string $
 }
 
 /*
+ * Сопоставление вида деятельности строки часовой сетки с типом занятия:
+ * сначала ЯВНАЯ связь из учебного плана (activity_kind.lesson_type_id),
+ * затем — прежнее сопоставление по имени/сокращению («Лекции»~«Лекция»).
+ */
+function currRowMatchesLessonType(array $row, int $lessonTypeId, ?string $typeName, array $kindLtMap): bool {
+  $kindId = (int)($row['activity_kind_id'] ?? 0);
+  if ($kindId > 0 && isset($kindLtMap[$kindId]) && $kindLtMap[$kindId] === $lessonTypeId) {
+    return true;
+  }
+  // Явная связь задана, но не совпала — fallback по имени всё равно пробуем
+  // (один вид может быть привязан к типу и называться похоже).
+  if ($typeName === null || $typeName === '') return false;
+  return currKindMatchesLessonType(
+    (string)($row['kind_name'] ?? ''),
+    (string)($row['short_name'] ?? ''),
+    (string)$typeName
+  );
+}
+
+/*
  * Плановые часы связки «группа + семестр + дисциплина + тип занятия» из
  * УЧЕБНОГО ПЛАНА (проверка при ручном редактировании и автозаполнении).
- * Вид деятельности сопоставляется с типом занятия по нормализованному имени
- * (или по короткому имени: «Лек», «Лаб», «Прак», «КСР»).
+ * Вид деятельности сопоставляется с типом занятия сначала по ЯВНОЙ связи
+ * (activity_kind.lesson_type_id, настраивается в справочниках), затем по
+ * нормализованному имени/сокращению («Лекции»~«Лекция», «Лаб»...).
  * Возвращает 0.0, если план по дисциплине пуст — тогда ограничение не действует.
  */
 function repoCurrPlannedHours(mysqli $conn, int $groupId, int $term, int $disciplineId, int $lessonTypeId): float {
@@ -550,14 +607,13 @@ function repoCurrPlannedHours(mysqli $conn, int $groupId, int $term, int $discip
     [$lessonTypeId], null);
   if (!$typeName) return 0.0;
 
+  $kindLtMap = repoCurrKindLessonTypeMap($conn);
+
   $sum = 0.0;
   foreach (repoCurrGroupTermGrid($conn, $groupId, $term) as $g) {
     if ((int)$g['discipline_id'] !== $disciplineId) continue;
 
-    if (currKindMatchesLessonType(
-        (string)$g['kind_name'],
-        (string)($g['short_name'] ?? ''),
-        (string)$typeName)) {
+    if (currRowMatchesLessonType($g, $lessonTypeId, (string)$typeName, $kindLtMap)) {
       $sum += (float)$g['hours'];
     }
   }
@@ -611,14 +667,14 @@ function repoCurrPlannedDoneByTypes(mysqli $planConn, mysqli $mainConn, int $gro
   $doneMap = [];
   foreach ($doneRows as $d) $doneMap[(int)$d['tid']] = (float)$d['done'];
 
+  // Явные связи «вид деятельности -> тип занятия» из учебного плана
+  $kindLtMap = repoCurrKindLessonTypeMap($planConn);
+
   $result = [];
   foreach ($types as $t) {
     $planned = 0.0;
     foreach ($byDisc as $g) {
-      if (currKindMatchesLessonType(
-          (string)$g['kind_name'],
-          (string)($g['short_name'] ?? ''),
-          (string)$t['name'])) {
+      if (currRowMatchesLessonType($g, (int)$t['id'], (string)$t['name'], $kindLtMap)) {
         $planned += (float)$g['hours'];
       }
     }
@@ -730,7 +786,8 @@ function repoCurrWeekViolations(mysqli $planConn, mysqli $mainConn, array $weekI
   $inTerms   = implode(',', array_fill(0, count($termList), '?'));
   $grid = dbAll($planConn,
     "SELECT c.term, dm.discipline_id, ch.group_id, ch.activity_kind_id,
-            ak.name AS kind_name, ak.short_name, SUM(ch.hours) AS hours
+            ak.name AS kind_name, ak.short_name, ak.lesson_type_id,
+            SUM(ch.hours) AS hours
      FROM " . planTab('curriculum') . " c
      JOIN " . planTab('discipline_meta') . " dm ON dm.id = c.discipline_id AND dm.is_deleted = 0
      JOIN " . planTab('curriculum_hours') . " ch ON ch.curriculum_id = c.id AND ch.is_deleted = 0
@@ -741,13 +798,24 @@ function repoCurrWeekViolations(mysqli $planConn, mysqli $mainConn, array $weekI
     array_merge($termList, $groupIds));
   if (!$grid) return $empty;
 
-  // план[term][groupId][disciplineId][kindName] = hours  (groupId=-1 — общий)
+  // план[term][groupId][disciplineId][kindKey] = ['hours'=>float,
+  //        'name'=>kind_name, 'short'=>short_name, 'ltid'=>lesson_type_id]
+  // (groupId = -1 — строка «Все группы»)
   $plan = [];
   foreach ($grid as $g) {
     $gid  = $g['group_id'] !== null ? (int)$g['group_id'] : -1;
     $term = (int)$g['term']; $did = (int)$g['discipline_id'];
-    $key  = (string)$g['kind_name'] . '|' . (string)($g['short_name'] ?? '');
-    $plan[$term][$gid][$did][$key] = ($plan[$term][$gid][$did][$key] ?? 0.0) + (float)$g['hours'];
+    $key  = (string)$g['kind_name'] . '|' . (string)($g['short_name'] ?? '')
+          . '|' . (int)($g['activity_kind_id'] ?? 0);
+    $slot = &$plan[$term][$gid][$did][$key];
+    if (!isset($slot)) {
+      $slot = ['hours' => 0.0,
+               'name'  => (string)$g['kind_name'],
+               'short' => (string)($g['short_name'] ?? ''),
+               'ltid'  => isset($g['lesson_type_id']) ? (int)$g['lesson_type_id'] : 0];
+    }
+    $slot['hours'] += (float)$g['hours'];
+    unset($slot);
   }
 
   // Типы занятий основной базы (для сопоставления «вид <-> тип»)
@@ -775,12 +843,20 @@ function repoCurrWeekViolations(mysqli $planConn, mysqli $mainConn, array $weekI
     $lessonRef[(int)$drow['id']] = [$term, $gid, $did, $tid];
   }
 
-  // Плановые часы типа занятия = сумма видов деятельности, сопоставимых с ним
-  $plannedForType = static function (array $kinds, string $typeName) {
+  // Плановые часы типа занятия = сумма видов деятельности, сопоставимых с ним.
+  // Сначала — ЯВНАЯ связь из учебного плана (activity_kind.lesson_type_id),
+  // затем fallback по нормализованному имени/сокращению вида.
+  $plannedForType = static function (array $kinds, int $typeId, string $typeName) {
     $sum = 0.0;
-    foreach ($kinds as $key => $hrs) {
-      [$kindName, $shortName] = explode('|', $key, 2);
-      if (currKindMatchesLessonType($kindName, $shortName, $typeName)) $sum += (float)$hrs;
+    foreach ($kinds as $kind) {
+      if ((int)($kind['ltid'] ?? 0) === $typeId && $typeId > 0) {
+        $sum += (float)$kind['hours'];
+        continue;
+      }
+      if ($typeName !== '' && currKindMatchesLessonType(
+          (string)($kind['name'] ?? ''), (string)($kind['short'] ?? ''), $typeName)) {
+        $sum += (float)$kind['hours'];
+      }
     }
     return $sum;
   };
@@ -792,16 +868,18 @@ function repoCurrWeekViolations(mysqli $planConn, mysqli $mainConn, array $weekI
     $typeName = $typeNameById[$tid] ?? null;
     if ($typeName === null) continue;
 
-    $planned = $plannedForType($plan[$term][-1][$did] ?? [], $typeName)
-             + $plannedForType($plan[$term][$gid][$did] ?? [], $typeName);
+    $planAll  = $plan[$term][-1][$did] ?? [];
+    $planGrp  = $plan[$term][$gid][$did] ?? [];
+    $planned = $plannedForType($planAll, $tid, $typeName)
+             + $plannedForType($planGrp, $tid, $typeName);
     if ($planned <= 0.0001) continue; // плана по этому типу нет — не ограничиваем
 
     // выполнено = часы этого типа и типов, относящихся к тем же видам плана
     $tdone = 0.0;
     foreach ($done[$term][$gid][$did] ?? [] as $t2 => $h2) {
       $n2 = $typeNameById[$t2] ?? '';
-      if ($n2 !== '' && $plannedForType($plan[$term][-1][$did] ?? [], $n2)
-                      + $plannedForType($plan[$term][$gid][$did] ?? [], $n2) > 0.0001) {
+      if ($plannedForType($planAll, (int)$t2, (string)$n2)
+        + $plannedForType($planGrp, (int)$t2, (string)$n2) > 0.0001) {
         $tdone += (float)$h2;
       }
     }
