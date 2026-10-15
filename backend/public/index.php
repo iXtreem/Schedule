@@ -143,6 +143,7 @@ try {
     case 'curr_discipline':
     case 'curr_cards':
     case 'curr_card':
+    case 'curr_violations':
         require_once __DIR__ . '/../modules/curriculum/curriculum.controller.php';
         curriculumController($method, $entity);
     break;

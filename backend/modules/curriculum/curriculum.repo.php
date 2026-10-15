@@ -610,3 +610,169 @@ function repoCurrPlannedDoneByTypes(mysqli $planConn, mysqli $mainConn, int $gro
   }
   return $result;
 }
+
+/* ---------------------------------------------------------------------------
+ * НАРУШЕНИЯ УЧЕБНОГО ПЛАНА для сетки расписания (красный текст как у
+ * преподавателей). Считает «выполнено/план» по связке группа+семестр+
+ * дисциплина+тип занятия и помечает превышения.
+ *
+ *   $weekIds  — id недель текущей просматриваемой недели (обычно 2);
+ *   $groupIds — показываемые группы;
+ *   семестр каждой группы берётся из календаря (term_for_date): часы плана
+ *   относятся к группе и семестру, поэтому все занятия этой группы в
+ *   текущем семестре считаются выполненными независимо от недели.
+ *
+ * Возвращает ['violations' => [lessonId => ['over'=>..,'planned'=>..,
+ * 'done'=>..]], 'groups' => [groupId => ['total_over'=>float]]].
+ * При недоступной базе плана возвращает пустой результат — обычный режим
+ * работы программы не блокируется.
+ * ------------------------------------------------------------------------- */
+function repoCurrWeekViolations(mysqli $planConn, mysqli $mainConn, array $weekIds, array $groupIds): array {
+  $empty = ['violations' => [], 'groups' => []];
+  $weekIds  = array_values(array_filter(array_map('intval', $weekIds)));
+  $groupIds = array_values(array_filter(array_map('intval', $groupIds)));
+  if (!$weekIds || !$groupIds) return $empty;
+
+  $mp  = currMainPrefix();
+  $wph = implode(',', array_fill(0, count($weekIds), '?'));
+  $gph = implode(',', array_fill(0, count($groupIds), '?'));
+
+  // Учебная неделя состоит из двух недель календаря — семестр считаем для
+  // каждой из них отдельно (на стыке семестров проверяются оба).
+  // Семестр недели = по её start_date и году поступления группы.
+  $rowsW = dbAll($mainConn,
+      "SELECT id, start_date FROM {$mp}week WHERE id IN ({$wph})",
+      $weekIds);
+  if (!$rowsW) return $empty;
+
+  $gy = [];
+  foreach (dbAll($mainConn,
+      "SELECT id, admission_year AS y FROM {$mp}student_group WHERE id IN ({$gph})",
+      $groupIds) as $g) {
+    $gy[(int)$g['id']] = (int)($g['y'] ?? 0);
+  }
+
+  $terms    = [];   // множество проверяемых семестров
+  $weekTerm = [];   // weekId -> term
+  foreach ($rowsW as $rw) {
+    $d   = strtotime((string)($rw['start_date'] ?? 'now')) ?: time();
+    $wid = (int)$rw['id'];
+    foreach ($gy as $y) {
+      if ($y <= 0) continue;
+      $t = currCalcTerm($d, $y);
+      if ($t > 0) { $terms[$t] = $t; $weekTerm[$wid] = $t; break; }
+    }
+  }
+  if (!$terms) return $empty;
+
+  // Карточки плана с часами по видам деятельности для проверяемых семестров
+  $termList  = array_values($terms);
+  $inTerms   = implode(',', array_fill(0, count($termList), '?'));
+  $grid = dbAll($planConn,
+    "SELECT c.term, dm.discipline_id, ch.group_id, ch.activity_kind_id,
+            ak.name AS kind_name, ak.short_name, SUM(ch.hours) AS hours
+     FROM " . planTab('curriculum') . " c
+     JOIN " . planTab('discipline_meta') . " dm ON dm.id = c.discipline_id AND dm.is_deleted = 0
+     JOIN " . planTab('curriculum_hours') . " ch ON ch.curriculum_id = c.id AND ch.is_deleted = 0
+     JOIN " . planTab('activity_kind') . " ak ON ak.id = ch.activity_kind_id AND ak.is_deleted = 0
+     WHERE c.is_deleted = 0 AND c.term IN ({$inTerms})
+       AND (ch.group_id IS NULL OR ch.group_id IN ({$gph}))
+     GROUP BY c.term, dm.discipline_id, ch.group_id, ch.activity_kind_id",
+    array_merge($termList, $groupIds));
+  if (!$grid) return $empty;
+
+  // план[term][groupId][disciplineId][kindName] = hours  (groupId=-1 — общий)
+  $plan = [];
+  foreach ($grid as $g) {
+    $gid  = $g['group_id'] !== null ? (int)$g['group_id'] : -1;
+    $term = (int)$g['term']; $did = (int)$g['discipline_id'];
+    $key  = (string)$g['kind_name'] . '|' . (string)($g['short_name'] ?? '');
+    $plan[$term][$gid][$did][$key] = ($plan[$term][$gid][$did][$key] ?? 0.0) + (float)$g['hours'];
+  }
+
+  // Типы занятий основной базы (для сопоставления «вид <-> тип»)
+  $types = dbAll($mainConn, "SELECT id, name FROM {$mp}lesson_type WHERE is_deleted = 0");
+  $typeNameById = [];
+  foreach ($types as $t) $typeNameById[(int)$t['id']] = (string)$t['name'];
+
+  // Выполненные часы всех занятий групп (часы плана считаются за семестр)
+  $doneRows = dbAll($mainConn,
+    "SELECT s.id, s.group_id, s.discipline_id, s.lesson_type_id,
+            s.week_id, COALESCE(s.hours, 0) AS hours
+     FROM schedule_lesson s
+     WHERE s.is_deleted = 0 AND s.group_id IN ({$gph})",
+    $groupIds);
+
+  // done[term][groupId][disciplineId][typeId] = hours ; lessonRef[lessonId]
+  $done = []; $lessonRef = [];
+  foreach ($doneRows as $drow) {
+    $gid  = (int)$drow['group_id']; $did = (int)$drow['discipline_id'];
+    $tid  = (int)$drow['lesson_type_id'];
+    $term = (int)($weekTerm[(int)$drow['week_id']] ?? 0);
+    if ($term <= 0 || !isset($terms[$term])) continue; // неделя вне проверяемых семестров
+    if ($did <= 0 || $tid <= 0) continue;
+    $done[$term][$gid][$did][$tid] = ($done[$term][$gid][$did][$tid] ?? 0.0) + (float)$drow['hours'];
+    $lessonRef[(int)$drow['id']] = [$term, $gid, $did, $tid];
+  }
+
+  // Плановые часы типа занятия = сумма видов деятельности, сопоставимых с ним
+  $plannedForType = static function (array $kinds, string $typeName) {
+    $sum = 0.0;
+    foreach ($kinds as $key => $hrs) {
+      [$kindName, $shortName] = explode('|', $key, 2);
+      if (currKindMatchesLessonType($kindName, $shortName, $typeName)) $sum += (float)$hrs;
+    }
+    return $sum;
+  };
+
+  $violations  = [];
+  $groupTotals = [];
+  foreach ($lessonRef as $lid => $ref) {
+    [$term, $gid, $did, $tid] = $ref;
+    $typeName = $typeNameById[$tid] ?? null;
+    if ($typeName === null) continue;
+
+    $planned = $plannedForType($plan[$term][-1][$did] ?? [], $typeName)
+             + $plannedForType($plan[$term][$gid][$did] ?? [], $typeName);
+    if ($planned <= 0.0001) continue; // плана по этому типу нет — не ограничиваем
+
+    // выполнено = часы этого типа и типов, относящихся к тем же видам плана
+    $tdone = 0.0;
+    foreach ($done[$term][$gid][$did] ?? [] as $t2 => $h2) {
+      $n2 = $typeNameById[$t2] ?? '';
+      if ($n2 !== '' && $plannedForType($plan[$term][-1][$did] ?? [], $n2)
+                      + $plannedForType($plan[$term][$gid][$did] ?? [], $n2) > 0.0001) {
+        $tdone += (float)$h2;
+      }
+    }
+
+    if ($tdone > $planned + 0.0001) {
+      $over = round($tdone - $planned, 2);
+      $violations[$lid] = [
+        'over'    => $over,
+        'planned' => round($planned, 2),
+        'done'    => round($tdone, 2),
+      ];
+      $groupTotals[$gid] = round(($groupTotals[$gid] ?? 0) + $over, 2);
+    }
+  }
+
+  return ['violations' => $violations, 'groups' => $groupTotals];
+}
+
+// Семестр по дате и году поступления группы (та же логика, что во фронтенде:
+// сентябрь-декабрь -> нечётный, февраль-июнь -> чётный, январь -> нечётный).
+function currCalcTerm(int $timestamp, int $admissionYear): int {
+  $year  = (int)date('Y', $timestamp);
+  $month = (int)date('n', $timestamp);
+  if ($month >= 9) {
+    $k = $year - $admissionYear; $term = $k * 2 + 1;
+  } elseif ($month >= 2 && $month <= 6) {
+    $k = $year - $admissionYear - 1; $term = $k * 2 + 2;
+  } elseif ($month === 1) {
+    $k = $year - $admissionYear - 1; $term = $k * 2 + 1;
+  } else {
+    $k = $year - $admissionYear; $term = $k * 2 + 1;
+  }
+  return max(1, min(12, $term));
+}

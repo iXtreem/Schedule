@@ -466,6 +466,23 @@ function curriculumController($method, $entity) {
         sendJson(repoCurrGroupTermControls($conn, $groupId, $term));
         return;
       }
+
+      // Нарушения учебного плана для сетки расписания (красная подсветка
+      // занятий и предупреждение под таблицей). week_ids/group_ids — списки
+      // через запятую. При недоступной базе плана — пустой ответ.
+      case 'curr_violations': {
+        if ($method !== 'GET') errorJson('Method not allowed', 405);
+        $weekIds  = array_filter(array_map('intval', explode(',', (string)getQuery('week_ids', ''))));
+        $groupIds = array_filter(array_map('intval', explode(',', (string)getQuery('group_ids', ''))));
+        if (!$weekIds || !$groupIds) { sendJson(['violations' => [], 'groups' => []]); return; }
+        try {
+          sendJson(repoCurrWeekViolations($conn, $mainConn, $weekIds, $groupIds));
+        } catch (Throwable $e) {
+          error_log('curr_violations skipped: ' . $e->getMessage());
+          sendJson(['violations' => [], 'groups' => []]);
+        }
+        return;
+      }
     }
 
     errorJson('Unknown curriculum entity', 404);
