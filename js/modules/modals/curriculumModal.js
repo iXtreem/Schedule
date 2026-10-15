@@ -480,56 +480,17 @@ async function reloadDisciplines() {
 
 // -------------------------------------------------------------------- bind
 
-function bindOnce() {
-  if (isBound) return;
-  // Привязку делаем, даже если окно ещё не в DOM: обработчик кнопки ищет
-  // элементы ЛЕНИВО в момент клика. Повторная привязка не нужна — ставим
-  // флаг сразу.
-  isBound = true;
+// Все внутренние обработчики окна (кнопка «＋ Дисциплина в план», вкладки,
+// редактор часов и т.д.) вешаются ОДИН РАЗ при открытии модального окна.
+// Раньше они вязались в bindOnce(), который никто не вызывал, поэтому клик
+// по «＋ Дисциплина в план» не приводил ни к какой функции.
+let innerBound = false;
 
-  const btn = openBtn();
-  if (!btn) {
-    console.error("curriculumModal: кнопка #currBtn не найдена в index.html");
-    return;
-  }
-
-  btn.addEventListener("click", async () => {
-    // 1. Окно ОБЯЗАТЕЛЬНО показываем СРАЗУ, до любых сетевых запросов.
-    //    Раньше при любой ошибке загрузки (500 на сервере, ошибка в JS)
-    //    пользователь видел лишь «нажатие ничего не делает» — теперь окно
-    //    откроется всегда, а проблемы покажем внутри него и в консоли.
-    let ov = overlay();
-    if (!ov) {
-      // Страховка: если index.html почему-то не отдан браузером целиком
-      // (кэш, битый HTML), пересобираем обработчики и пробуем ещё раз.
-      console.error("curriculumModal: #currOverlay не найден — перевязываю обработчики");
-      isBound = false;
-      bindOnce();
-      ov = overlay();
-      if (!ov) {
-        alert("Не найдено окно учебного плана (#currOverlay) в index.html. Обновите страницу (Ctrl+F5).");
-        return;
-      }
-    }
-    ov.classList.remove("hidden");
-    setStatus("Загрузка учебного плана...");
-    try {
-      await loadMeta(true);
-      await Promise.all([
-        reloadCards(),
-        reloadDepartments(),
-        reloadKinds(),
-        reloadDisciplines(),
-      ]);
-      renderTabs();
-      setStatus("");
-    } catch (e) {
-      console.error("Учебный план: ошибка загрузки данных:", e);
-      setStatus("Не удалось загрузить данные: " + (e?.message || e));
-      // Вкладки всё равно рисуем — окно остаётся рабочим.
-      try { renderTabs(); } catch (_) {}
-    }
-  });
+function bindInnerHandlers() {
+  if (innerBound) return;
+  const ov = overlay();
+  if (!ov) return; // окно ещё не в DOM — попробуем при следующем открытии
+  innerBound = true;
 
   const close = () => {
     const ov = overlay();
@@ -801,6 +762,9 @@ async function openModal() {
     return;
   }
   ov.classList.remove("hidden");
+  // Вешаем внутренние обработчики окна (кнопка «＋ Дисциплина в план»,
+  // вкладки, редактор часов) — один раз, после того как окно в DOM.
+  bindInnerHandlers();
   setStatus("Загрузка учебного плана...");
   try {
     await loadMeta(true);
