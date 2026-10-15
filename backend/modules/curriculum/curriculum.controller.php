@@ -142,6 +142,14 @@ function currUiGroups(mysqli $mainConn): array {
   });
 }
 
+// Сброс позапросного кэша. Вызывается в начале каждого обращения к
+// curriculumController(): под mod_php процесс переиспользуется между
+// запросами, и без сброса после CRUD-операций окно показывало бы
+// устаревшие кафедры/виды деятельности/группы.
+function currCacheReset() {
+  $GLOBALS['__curr_cache'] = [];
+}
+
 // Карточка плана для формы: часы -> [{groupId, activityKindId, hours}],
 // контроль -> [{controlTypeId, terms:[..]}].
 function currUiCard(mysqli $planConn, int $id): array {
@@ -196,6 +204,9 @@ function currUiNormalizeCardBody($body): array {
 }
 
 function curriculumController($method, $entity) {
+  // Кэш справочников живёт только в рамках одного HTTP-запроса.
+  currCacheReset();
+
   // Все таблицы живут в базе учебного плана — получаем её соединение
   // (с авто-созданием схемы и справочников по умолчанию).
   $mainConn = getDBConnection();
