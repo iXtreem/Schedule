@@ -254,6 +254,27 @@ function repoLessonPrepareData($conn, $p, $excludeScheduleId = 0) {
       $left = max(0.0, $planned - $done);
       throw new Exception("Hours limit exceeded: left {$left}, attempted {$hours}.");
     }
+
+    // 2b) контроль по ОТДЕЛЬНОЙ БАЗЕ «Учебный план» (uchetlfpstu_plan):
+    // часы распределены по видам учебной деятельности для каждой группы в
+    // каждом семестре. Если плановые часы по связке «группа+семестр+
+    // дисциплина+тип занятия» заданы — сверх них ставить нельзя.
+    // (Ошибки недоступной базы плана не блокируют обычную работу программы.)
+    $currPlanned = repoCurriculumPlannedHoursSafe($conn, $groupId, $term, $subjectId, $typeId);
+    if ($currPlanned > $EPS) {
+      $currDone = repoDoneHours($conn, $groupId, $subjectId, $teacherId, $typeId, $excludeScheduleId)
+        + repoDoneHoursByGroupSubjectType($conn, $groupId, $subjectId, $typeId, $excludeScheduleId, $teacherId);
+      // currDone: сумма по всем преподавателям (часы плана относятся к группе,
+      // а не к конкретному преподавателю).
+      if (($currDone + $hours) > ($currPlanned + $EPS)) {
+        $left = max(0.0, $currPlanned - $currDone);
+        throw new Exception(
+          "Нарушение учебного плана: по дисциплине и типу занятия запланировано "
+          . "{$currPlanned} ч, учтено {$currDone} ч, осталось {$left} ч, "
+          . "а ставится {$hours} ч."
+        );
+      }
+    }
   }
 
   return compact('weekId', 'groupId', 'subjectId', 'teacherId', 'typeId', 'roomId',
