@@ -283,14 +283,21 @@ function curriculumController($method, $entity) {
           'term'           => (int)$r['term'],
           'totalHours'     => (float)($r['total_hours'] ?? 0),
           'comment'        => (string)($r['comment'] ?? ''),
-          // сводка часов по видам деятельности (сумма по всем группам карточки)
+          // сводка часов по видам деятельности РАЗДЕЛЬНО ПО ГРУППАМ
+          // (строка с group_id = NULL — «Все группы»)
           'hoursSummary'   => array_values(array_reduce(
             $r['hours'] ?? [],
             static function ($acc, $h) {
-              $k = (int)$h['activity_kind_id'];
+              $gid  = isset($h['group_id']) && $h['group_id'] !== null
+                        ? (int)$h['group_id'] : 0;
+              $k    = $gid . '|' . (int)$h['activity_kind_id'];
               if (!isset($acc[$k])) {
-                $acc[$k] = ['kindId' => $k, 'kindName' => (string)$h['kind_name'],
-                            'shortName' => (string)($h['short_name'] ?? ''), 'hours' => 0.0];
+                $acc[$k] = ['groupId' => $gid ?: null,
+                            'groupName' => (string)($h['group_name'] ?? ''),
+                            'kindId' => (int)$h['activity_kind_id'],
+                            'kindName' => (string)$h['kind_name'],
+                            'shortName' => (string)($h['short_name'] ?? ''),
+                            'hours' => 0.0];
               }
               $acc[$k]['hours'] += (float)$h['hours'];
               return $acc;

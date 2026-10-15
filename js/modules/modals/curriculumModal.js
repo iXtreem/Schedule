@@ -178,21 +178,27 @@ function fillStaticSelects() {
       );
     }
   }
-  if (filterDept() && filterDept().dataset.filled !== "1") {
+  if (filterDept()) {
+    const prev = filterDept().value;
     filterDept().innerHTML =
       `<option value="">Все кафедры</option>` +
       meta.departments
         .map((d) => `<option value="${d.id}">${esc(d.name)}</option>`)
         .join("");
-    filterDept().dataset.filled = "1";
+    if (prev && meta.departments.some((d) => String(d.id) === prev)) {
+      filterDept().value = prev;
+    }
   }
-  if (newDiscDeptSelect() && newDiscDeptSelect().dataset.filled !== "1") {
+  if (newDiscDeptSelect()) {
+    const prev = newDiscDeptSelect().value;
     newDiscDeptSelect().innerHTML =
       `<option value="">Без кафедры</option>` +
       meta.departments
         .map((d) => `<option value="${d.id}">${esc(d.name)}</option>`)
         .join("");
-    newDiscDeptSelect().dataset.filled = "1";
+    if (prev && meta.departments.some((d) => String(d.id) === prev)) {
+      newDiscDeptSelect().value = prev;
+    }
   }
 }
 
@@ -212,29 +218,52 @@ async function reloadCards() {
 function renderCardsTable() {
   if (!cardsTable()) return;
   const head = `<tr>
-    <th>Дисциплина</th><th>Кафедра</th><th>Курс</th><th>Сем.</th>
+    <th>Группа</th><th>Дисциплина</th><th>Кафедра</th><th>Курс</th><th>Сем.</th>
     <th>Трудоемкость</th><th>Часы по видам деятельности</th>
     <th>Контроль</th><th></th></tr>`;
-  const rows = cardsCache.map((c) => {
-    const hours = (c.hoursSummary || [])
-      .map((h) => `${esc(h.shortName || h.kindName)}: ${fmtH(h.hours)}`)
-      .join(", ");
+  // Часы группируем по группам: одна строка таблицы = одна группа.
+  const rows = cardsCache.flatMap((c) => {
+    const byGroup = new Map(); // key: groupId|0 -> { name, parts: [] }
+    for (const h of c.hoursSummary || []) {
+      const key = String(h.groupId ?? 0);
+      if (!byGroup.has(key)) {
+        byGroup.set(key, {
+          name: h.groupName || (h.groupId ? String(h.groupId) : "Все группы"),
+          parts: [],
+        });
+      }
+      byGroup.get(key).parts.push(
+        `${esc(h.shortName || h.kindName)}: ${fmtH(h.hours)}`
+      );
+    }
+    if (byGroup.size === 0) byGroup.set("0", { name: "—", parts: [] });
+
     const ctrl = (c.controlsSummary || [])
       .map((x) => `${esc(x.name)} (${x.terms.join(", ")})`)
       .join("; ");
-    return `<tr data-card-id="${c.id}">
-      <td>${esc(c.disciplineName)}</td>
-      <td>${esc(c.departmentName || "—")}</td>
-      <td>${c.course}</td>
-      <td>${c.term}</td>
-      <td>${fmtH(c.totalHours)}</td>
-      <td>${hours || '<span class="muted">не заданы</span>'}</td>
-      <td>${ctrl || '<span class="muted">—</span>'}</td>
-      <td class="curr-row-actions">
+
+    let gi = 0;
+    return [...byGroup.values()].map((g) => {
+      const isFirst = gi++ === 0;
+      return `<tr data-card-id="${c.id}">
+      <td><b>${esc(g.name)}</b></td>
+      ${
+        isFirst
+          ? `<td rowspan="${byGroup.size}">${esc(c.disciplineName)}</td>
+      <td rowspan="${byGroup.size}">${esc(c.departmentName || "—")}</td>
+      <td rowspan="${byGroup.size}">${c.course}</td>
+      <td rowspan="${byGroup.size}">${c.term}</td>
+      <td rowspan="${byGroup.size}">${fmtH(c.totalHours)}</td>`
+          : ""
+      }
+      <td>${g.parts.join(", ") || '<span class="muted">не заданы</span>'}</td>
+      ${isFirst ? `<td rowspan="${byGroup.size}">${ctrl || '<span class="muted">—</span>'}</td>
+      <td rowspan="${byGroup.size}" class="curr-row-actions">
         <button class="btn btn-outline" data-edit-card="${c.id}" type="button">Изменить</button>
         <button class="btn btn-outline curr-danger-btn" data-del-card="${c.id}" type="button">✕</button>
-      </td>
+      </td>` : ""}
     </tr>`;
+    });
   });
   cardsTable().innerHTML =
     head +
@@ -313,9 +342,24 @@ function closeCardForm() {
   editingCardId = null;
 }
 
-// Таблица часов: группа × вид деятельности × часы
+// Таблица часов: группа × вид деятельности × часы.
+// Строка с groupId = null («Все группы») — общая для всего потока; тогда
+// ограничение по общей трудоемкости считается по сумме таких строк.
+function hoursSumForLimit() {
+  let sum = 0;
+  for (const r of hourRows) {
+    if (!Number(r.activityKindId)) continue;
+    if (!r.groupId) sum += Number(r.hours || 0);
+  }
+  return sum;
+}
+
 function renderHoursTable() {
   if (!hoursTable()) return;
+  const total = Number(cardTotalInput()?.value || 0);
+  const sumAll = hoursSumForLimit();
+  const over = total > 0 && sumAll > total + 1e-6;
+
   const groupOptions = (selected) =>
     `<option value=""${!selected ? " selected" : ""}>Все группы</option>` +
     meta.groups
@@ -348,7 +392,14 @@ function renderHoursTable() {
       )
       .join("") +
     `<tr class="curr-hours-total"><td colspan="2">Итого по карточке</td>` +
-    `<td><b id="currHoursSum">${fmtH(hourRows.reduce((s, r) => s + Number(r.hours || 0), 0))}</b> ч</td><td></td></tr>`;
+    `<td><b id="currHoursSum">${fmtH(sumAll)}</b> ч</td><td></td></tr>` +
+    (total > 0
+      ? `<tr class="curr-hours-total"><td colspan="2">Общая трудоемкость</td>` +
+        `<td>${over ? `<b style="color:#c0392b">${fmtH(total)} ч — ПРЕВЫШЕНИЕ!</b>` : `${fmtH(total)} ч`}</td><td></td></tr>`
+      : "");
+
+  // Подсветка строк, из-за которых превышен лимит
+  if (over) setStatus(`Сумма часов (${fmtH(sumAll)} ч) превышает общую трудоемкость (${fmtH(total)} ч). Уменьшите часы.`);
 }
 
 // Блоки видов контроля: чекбоксы семестров 1..8
@@ -374,6 +425,24 @@ async function saveCard() {
   await guard(async () => {
     const metaId = Number(cardDisciplineSelect().value);
     if (!metaId) throw new Error("Выберите дисциплину (во вкладке «Дисциплины» она должна быть привязана к кафедре)");
+    // Клиентская проверка: нельзя распределить больше часов, чем общая трудоемкость.
+    const totalH = Number(cardTotalInput().value) || 0;
+    if (totalH > 0) {
+      const perGroup = {};
+      for (const r of hourRows) {
+        if (!Number(r.activityKindId)) continue;
+        const key = r.groupId ? String(Number(r.groupId)) : "ALL";
+        perGroup[key] = (perGroup[key] || 0) + (Number(r.hours) || 0);
+      }
+      for (const [key, sumG] of Object.entries(perGroup)) {
+        if (sumG > totalH + 1e-6) {
+          const label = key === "ALL" ? "«Все группы»" : `группа ${key}`;
+          throw new Error(
+            `Сумма часов (${fmtH(sumG)} ч) в строке ${label} превышает общую трудоемкость (${fmtH(totalH)} ч).`
+          );
+        }
+      }
+    }
     const payload = {
       id: editingCardId || 0,
       disciplineMetaId: metaId,
@@ -560,12 +629,34 @@ function bindInnerHandlers() {
     if (!field || hourRows[idx] === undefined) return;
     if (field === "hours") hourRows[idx].hours = Number(e.target.value) || 0;
     else hourRows[idx][field] = e.target.value || null;
+    // Не перерисовываем всю таблицу при вводе цифр (иначе теряется фокус),
+    // только обновляем итог и предупреждение о превышении.
     const sumEl = document.getElementById("currHoursSum");
-    if (sumEl) {
-      sumEl.textContent = fmtH(hourRows.reduce((s, r) => s + Number(r.hours || 0), 0));
+    if (sumEl) sumEl.textContent = fmtH(hoursSumForLimit());
+    const total = Number(cardTotalInput()?.value || 0);
+    const sumAll = hoursSumForLimit();
+    if (total > 0 && sumAll > total + 1e-6) {
+      setStatus(`Сумма часов (${fmtH(sumAll)} ч) превышает общую трудоемкость (${fmtH(total)} ч). Уменьшите часы.`);
+    } else {
+      setStatus("Есть несохранённые изменения в часах.");
     }
-    setStatus("Есть несохранённые изменения в часах.");
   });
+
+  // Смена группы/вида — пересчитываем итоги с учётом новых строк
+  hoursTable()?.addEventListener("change", (e) => {
+    const tr = e.target.closest("[data-hour-row]");
+    if (!tr) return;
+    const idx = Number(tr.dataset.hourRow);
+    const field = e.target.dataset.hourField;
+    if (!field || hourRows[idx] === undefined) return;
+    if (field === "groupId" || field === "activityKindId") {
+      hourRows[idx][field] = e.target.value || null;
+      renderHoursTable();
+    }
+  });
+
+  // При изменении общей трудоемкости сразу проверяем превышение
+  cardTotalInput()?.addEventListener("input", () => renderHoursTable());
 
   hoursTable()?.addEventListener("click", (e) => {
     const del = e.target.closest("[data-del-hour]");
@@ -609,7 +700,8 @@ function bindInnerHandlers() {
       if (!name) return alert("Название не может быть пустым");
       return guard(async () => {
         await api.saveCurrDepartment({ id, name, short_name: shortName });
-        await Promise.all([loadMeta(true), reloadDepartments()]);
+        await Promise.all([loadMeta(true), reloadDepartments(), reloadCards()]);
+        fillStaticSelects();
         setStatus("Кафедра сохранена.");
       });
     }
@@ -618,7 +710,7 @@ function bindInnerHandlers() {
       if (!confirm("Удалить кафедру?")) return;
       return guard(async () => {
         await api.deleteCurrDepartment(Number(del.dataset.delDep));
-        await Promise.all([loadMeta(true), reloadDepartments()]);
+        await Promise.all([loadMeta(true), reloadDepartments(), reloadDisciplines(), reloadCards()]);
         fillStaticSelects();
         setStatus("Кафедра удалена.");
       });
@@ -633,7 +725,8 @@ function bindInnerHandlers() {
       await api.saveCurrActivityKind({ name, short_name: akShortInput().value.trim() });
       akNameInput().value = "";
       akShortInput().value = "";
-      await Promise.all([loadMeta(true), reloadKinds()]);
+      await Promise.all([loadMeta(true), reloadKinds(), reloadCards()]);
+      if (isFormOpen()) renderHoursTable();
       setStatus("Вид деятельности добавлен.");
     })
   );
@@ -647,7 +740,8 @@ function bindInnerHandlers() {
       if (!name) return alert("Название не может быть пустым");
       return guard(async () => {
         await api.saveCurrActivityKind({ id, name, short_name: shortName });
-        await Promise.all([loadMeta(true), reloadKinds()]);
+        await Promise.all([loadMeta(true), reloadKinds(), reloadCards()]);
+        if (isFormOpen()) renderHoursTable();
         setStatus("Сохранено.");
       });
     }
@@ -656,7 +750,8 @@ function bindInnerHandlers() {
       if (!confirm("Удалить вид деятельности? Часы по нему исчезнут из плана.")) return;
       return guard(async () => {
         await api.deleteCurrActivityKind(Number(del.dataset.delAk));
-        await Promise.all([loadMeta(true), reloadKinds()]);
+        await Promise.all([loadMeta(true), reloadKinds(), reloadCards()]);
+        if (isFormOpen()) renderHoursTable();
         setStatus("Удалено.");
       });
     }
@@ -669,7 +764,8 @@ function bindInnerHandlers() {
       if (!name) throw new Error("Укажите название вида контроля");
       await api.saveCurrControlType({ name });
       ctNameInput().value = "";
-      await Promise.all([loadMeta(true), reloadKinds()]);
+      await Promise.all([loadMeta(true), reloadKinds(), reloadCards()]);
+      if (isFormOpen()) renderControls();
       setStatus("Вид контроля добавлен.");
     })
   );
@@ -682,7 +778,8 @@ function bindInnerHandlers() {
       if (!name) return alert("Название не может быть пустым");
       return guard(async () => {
         await api.saveCurrControlType({ id, name });
-        await Promise.all([loadMeta(true), reloadKinds()]);
+        await Promise.all([loadMeta(true), reloadKinds(), reloadCards()]);
+        if (isFormOpen()) renderControls();
         setStatus("Сохранено.");
       });
     }
@@ -691,7 +788,8 @@ function bindInnerHandlers() {
       if (!confirm("Удалить вид контроля?")) return;
       return guard(async () => {
         await api.deleteCurrControlType(Number(del.dataset.delCt));
-        await Promise.all([loadMeta(true), reloadKinds()]);
+        await Promise.all([loadMeta(true), reloadKinds(), reloadCards()]);
+        if (isFormOpen()) renderControls();
         setStatus("Удалено.");
       });
     }
@@ -707,7 +805,7 @@ function bindInnerHandlers() {
         departmentId: Number(newDiscDeptSelect().value) || 0,
       });
       newDiscNameInput().value = "";
-      await Promise.all([loadMeta(true), reloadDisciplines()]);
+      await Promise.all([loadMeta(true), reloadDisciplines(), reloadCards()]);
       setStatus("Дисциплина добавлена в план.");
     })
   );
@@ -725,7 +823,7 @@ function bindInnerHandlers() {
           disciplineId,
           departmentId,
         });
-        await Promise.all([loadMeta(true), reloadDisciplines()]);
+        await Promise.all([loadMeta(true), reloadDisciplines(), reloadCards()]);
         setStatus("Кафедра дисциплины сохранена.");
       });
     }

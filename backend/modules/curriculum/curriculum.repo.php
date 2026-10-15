@@ -213,9 +213,11 @@ function repoCurrList(mysqli $conn, int $course, int $term, int $departmentId, s
 
     foreach (dbAll($conn,
       "SELECT ch.curriculum_id, ch.group_id, ch.activity_kind_id, ch.hours,
-              ak.name AS kind_name, ak.short_name
+              ak.name AS kind_name, ak.short_name,
+              COALESCE(sg.name, CONCAT('гр.', ch.group_id)) AS group_name
        FROM {$ch} ch
        JOIN {$ak} ak ON ak.id = ch.activity_kind_id AND ak.is_deleted = 0
+       LEFT JOIN {$mp}student_group sg ON sg.id = ch.group_id
        WHERE ch.is_deleted = 0 AND ch.curriculum_id IN ({$in})
        ORDER BY ak.sort_order", $ids) as $h) {
       $hoursMap[(int)$h['curriculum_id']][] = $h;
@@ -289,6 +291,31 @@ function repoCurrSave(mysqli $conn, $body): int {
   $total   = (float)($body['total_hours'] ?? $body['totalHours'] ?? 0);
   $comment = trim((string)($body['comment'] ?? '')) ?: null;
   $id      = (int)($body['id'] ?? 0);
+
+  // Ограничение: сумма распределённых часов НЕ МОЖЕТ превышать общую
+  // трудоемкость карточки. Считаем по группам (строка «все группы» — один раз).
+  $hoursIn = $body['hours'] ?? [];
+  if (is_array($hoursIn) && $hoursIn && $total > 0) {
+    $perGroup = [];
+    foreach ($hoursIn as $row) {
+      $kindId = (int)($row['activity_kind_id'] ?? $row['activityKindId'] ?? 0);
+      if ($kindId <= 0) continue;
+      $h       = max(0, (float)($row['hours'] ?? 0));
+      $gidRaw  = $row['group_id'] ?? $row['groupId'] ?? null;
+      $key     = ($gidRaw === null || $gidRaw === '' || (int)$gidRaw <= 0) ? 'ALL' : (string)(int)$gidRaw;
+      $perGroup[$key] = ($perGroup[$key] ?? 0) + $h;
+    }
+    foreach ($perGroup as $key => $sumG) {
+      if ($sumG > $total + 1e-6) {
+        $label = $key === 'ALL' ? '«Все группы»' : 'группа #' . $key;
+        throw new Exception(
+          'Сумма часов (' . rtrim(rtrim(number_format($sumG, 2, '.', ''), '0'), '.')
+          . ' ч) в строке ' . $label . ' превышает общую трудоемкость ('
+          . rtrim(rtrim(number_format($total, 2, '.', ''), '0'), '.') . ' ч).'
+        );
+      }
+    }
+  }
 
   // UNIQUE (discipline_id, course, term) — не даём дублям.
   $dupSql = "SELECT id FROM {$curr}
