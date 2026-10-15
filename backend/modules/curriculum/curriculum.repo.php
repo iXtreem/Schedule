@@ -514,3 +514,51 @@ function repoCurrPlannedHours(mysqli $conn, int $groupId, int $term, int $discip
   }
   return $sum;
 }
+
+/*
+ * Счётчики «выполнено/план» для ВСЕХ типов занятий связки
+ * группа + семестр + дисциплина (из отдельной базы «Учебный план»).
+ * Возвращает [lesson_type_id => ['planned' => float, 'done' => float]];
+ * пустой массив — если плана по дисциплине нет (тогда ограничение не
+ * действует и фронт показывает типы без счётчика).
+ */
+function repoCurrPlannedDoneByTypes(mysqli $planConn, mysqli $mainConn, int $groupId, int $term, int $disciplineId): array {
+  // Плановые часы вида деятельности для группы и семестра
+  $grid = repoCurrGroupTermGrid($planConn, $groupId, $term);
+  $byDisc = array_values(array_filter($grid,
+    static fn($g) => (int)$g['discipline_id'] === $disciplineId));
+  if (!$byDisc) return [];
+
+  // Типы занятий основной базы
+  $mp = currMainPrefix();
+  $types = dbAll($mainConn, "SELECT id, name FROM {$mp}lesson_type WHERE is_deleted = 0");
+
+  // Уже поставленные часы группы по дисциплине, сгруппированные по типу
+  $doneRows = dbAll($mainConn,
+    "SELECT lesson_type_id AS tid, SUM(COALESCE(hours, 0)) AS done
+     FROM schedule_lesson
+     WHERE is_deleted = 0 AND group_id = ? AND discipline_id = ?
+     GROUP BY lesson_type_id",
+    [$groupId, $disciplineId]);
+  $doneMap = [];
+  foreach ($doneRows as $d) $doneMap[(int)$d['tid']] = (float)$d['done'];
+
+  $result = [];
+  foreach ($types as $t) {
+    $planned = 0.0;
+    foreach ($byDisc as $g) {
+      if (currKindMatchesLessonType(
+          (string)$g['kind_name'],
+          (string)($g['short_name'] ?? ''),
+          (string)$t['name'])) {
+        $planned += (float)$g['hours'];
+      }
+    }
+    if ($planned <= 0.0001) continue; // плана по этому типу нет
+    $result[(int)$t['id']] = [
+      'planned' => round($planned, 2),
+      'done'    => round($doneMap[(int)$t['id']] ?? 0.0, 2),
+    ];
+  }
+  return $result;
+}

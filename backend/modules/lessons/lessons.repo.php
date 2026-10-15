@@ -1,5 +1,9 @@
 <?php
 require_once __DIR__ . '/../../lib/db.php';
+// Проверка часов по отдельной базе «Учебный план» (uchetlfpstu_plan).
+// Функции repoCurr* подключаются только если модуль плана доступен; иначе
+// проверка мягко пропускается, чтобы программа работала без базы плана.
+@require_once __DIR__ . '/../curriculum/curriculum.repo.php';
 
 /*
  * Репозиторий расписания (новая схема БД uchet_lfpstu).
@@ -262,10 +266,9 @@ function repoLessonPrepareData($conn, $p, $excludeScheduleId = 0) {
     // (Ошибки недоступной базы плана не блокируют обычную работу программы.)
     $currPlanned = repoCurriculumPlannedHoursSafe($conn, $groupId, $term, $subjectId, $typeId);
     if ($currPlanned > $EPS) {
-      $currDone = repoDoneHours($conn, $groupId, $subjectId, $teacherId, $typeId, $excludeScheduleId)
-        + repoDoneHoursByGroupSubjectType($conn, $groupId, $subjectId, $typeId, $excludeScheduleId, $teacherId);
-      // currDone: сумма по всем преподавателям (часы плана относятся к группе,
-      // а не к конкретному преподавателю).
+      // Учтённые часы считаются по ВСЕМ преподавателям группы (часы плана
+      // относятся к группе, а не к конкретному преподавателю).
+      $currDone = repoDoneHoursByGroupSubjectType($conn, $groupId, $subjectId, $typeId, $excludeScheduleId);
       if (($currDone + $hours) > ($currPlanned + $EPS)) {
         $left = max(0.0, $currPlanned - $currDone);
         throw new Exception(
@@ -376,4 +379,36 @@ function repoDoneHours($conn, $groupId, $subjectId, $teacherId, $typeId, $exclud
     [(int)$groupId, (int)$subjectId, (int)$teacherId, (int)$typeId, (int)$excludeScheduleId, (int)$excludeScheduleId],
     0.0
   );
+}
+
+// Уже поставленные часы группы по дисциплине и типу занятия — по ВСЕМ
+// преподавателям (часы учебного плана относятся к группе, а не к педагогу).
+function repoDoneHoursByGroupSubjectType($conn, $groupId, $subjectId, $typeId, $excludeScheduleId = 0) {
+  return (float)dbScalar(
+    $conn,
+    "SELECT SUM(COALESCE(s.hours, 0)) AS done
+     FROM schedule_lesson s
+     WHERE s.is_deleted = 0
+       AND s.group_id = ?
+       AND s.discipline_id = ?
+       AND s.lesson_type_id = ?
+       AND (? = 0 OR s.id <> ?)",
+    [(int)$groupId, (int)$subjectId, (int)$typeId, (int)$excludeScheduleId, (int)$excludeScheduleId],
+    0.0
+  );
+}
+
+/*
+ * Плановые часы из отдельной базы «Учебный план» для связки
+ * группа + семестр + дисциплина + тип занятия.
+ * Возвращает 0.0, если модуль плана недоступен или база плана повреждена —
+ * тогда ограничение не действует и обычная работа программы не блокируется.
+ */
+function repoCurriculumPlannedHoursSafe($conn, $groupId, $term, $subjectId, $typeId): float {
+  if (!function_exists('repoCurrPlannedHours')) return 0.0;
+  try {
+    return repoCurrPlannedHours($conn, (int)$groupId, (int)$term, (int)$subjectId, (int)$typeId);
+  } catch (Throwable $e) {
+    return 0.0;
+  }
 }

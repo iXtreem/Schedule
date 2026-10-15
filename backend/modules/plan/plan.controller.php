@@ -108,6 +108,51 @@ function planController($conn, $method, $entity) {
         // появлялось «Лекция (0/0)» и тип можно было выбрать.
         $rows = planFallbackLessonTypes($conn);
       }
+
+      // Дополняем/заменяем часы отдельной базой «Учебный план»
+      // (uchetlfpstu_plan): там часы распределены по видам учебной
+      // деятельности для группы в семестре — именно они являются главным
+      // ограничением при ручном редактировании. Ошибки недоступной базы
+      // плана не блокируют обычную работу программы.
+      try {
+        @require_once __DIR__ . '/../curriculum/curriculum.repo.php';
+        if (function_exists('repoCurrPlannedDoneByTypes')) {
+          $planConn = planDB($conn);
+          $currMap = repoCurrPlannedDoneByTypes($planConn, $conn, $groupId, $term, $subjectId);
+          if ($currMap) {
+            $byId = [];
+            foreach ($rows as $r) $byId[(int)$r['id']] = $r;
+
+            // типы, которых нет в текущем списке (например, fallback-справочник
+            // сузился до типов plan_hours), но которые есть в учебном плане
+            foreach ($currMap as $tid => $_) {
+              if (!isset($byId[$tid])) {
+                $byId[$tid] = [
+                  'id' => $tid,
+                  'name' => dbScalar($conn, "SELECT name FROM lesson_type WHERE id = ?", [$tid], "Тип #$tid"),
+                ];
+              }
+            }
+
+            foreach ($byId as $tid => &$r) {
+              if (isset($currMap[$tid])) {
+                $r['planned_hours'] = $currMap[$tid]['planned'];
+                $r['done_hours']    = $currMap[$tid]['done'];
+              } else {
+                // типа нет в учебном плане -> обнуляем счётчик старого плана,
+                // чтобы не путать пользователя устаревшими цифрами
+                $r['planned_hours'] = null;
+                $r['done_hours']    = null;
+              }
+            }
+            unset($r);
+            $rows = array_values($byId);
+          }
+        }
+      } catch (Throwable $e) {
+        error_log('curriculum lesson types merge skipped: ' . $e->getMessage());
+      }
+
       sendJson($rows);
       return;
     }
