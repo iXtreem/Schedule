@@ -1624,3 +1624,165 @@ body.dict-modal-dragging {
   color: #b91c1c;
   font-weight: 600;
 }
+
+/* ==========================================================================
+   Окно «📚 Учебный план» (js/modules/modals/curriculumModal.js)
+   ========================================================================== */
+.curr-modal {
+  max-width: 1080px;
+  width: min(1080px, 96vw);
+}
+
+.curr-tabs {
+  margin-bottom: 10px;
+}
+
+.curr-pane .hint {
+  margin-bottom: 10px;
+}
+
+.curr-toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: center;
+  margin-bottom: 10px;
+}
+
+.curr-toolbar .select {
+  width: auto;
+  min-width: 140px;
+}
+
+.curr-toolbar #currSearch {
+  flex: 1 1 180px;
+  min-width: 160px;
+}
+
+.curr-table-wrap {
+  max-height: 46vh;
+  overflow: auto;
+}
+
+.curr-table td,
+.curr-table th {
+  font-size: 13px;
+  vertical-align: middle;
+}
+
+.curr-table input,
+.curr-table select {
+  width: 100%;
+  box-sizing: border-box;
+  padding: 4px 6px;
+  border: 1px solid #d7dbe3;
+  border-radius: 6px;
+  font-size: 13px;
+}
+
+.curr-row-actions {
+  white-space: nowrap;
+  text-align: right;
+}
+
+.curr-row-actions .btn {
+  padding: 3px 8px;
+  font-size: 12px;
+  margin-left: 4px;
+}
+
+.curr-danger-btn {
+  border-color: #dc3545 !important;
+  color: #b91c1c !important;
+}
+
+.curr-inline-add {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: center;
+  margin-bottom: 10px;
+}
+
+.curr-inline-add .select {
+  flex: 1 1 180px;
+}
+
+.curr-kinds-cols {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
+  gap: 16px;
+}
+
+/* Форма карточки учебного плана */
+.curr-card-form {
+  margin-top: 14px;
+  padding: 12px 14px;
+  border: 1px solid #d7dbe3;
+  border-radius: 10px;
+  background: #f8fafd;
+}
+
+.curr-card-form-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 8px;
+}
+
+.curr-card-fields {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+  gap: 10px;
+  margin-bottom: 10px;
+}
+
+.curr-card-fields .field-wide {
+  grid-column: 1 / -1;
+}
+
+.curr-section-title {
+  margin: 12px 0 6px;
+  font-size: 14px;
+}
+
+.curr-hours-total td {
+  font-size: 13px;
+  background: #eef2f8;
+}
+
+/* Виды контроля: строка с чекбоксами семестров */
+.curr-controls-wrap {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.curr-ctrl-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+  font-size: 13px;
+}
+
+.curr-ctrl-name {
+  min-width: 150px;
+  font-weight: 600;
+}
+
+.curr-ctrl-term {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  padding: 2px 8px;
+  border: 1px solid #d7dbe3;
+  border-radius: 6px;
+  background: #fff;
+  cursor: pointer;
+}
+
+.curr-ctrl-term input {
+  margin: 0;
+}

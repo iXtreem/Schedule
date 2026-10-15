@@ -147,8 +147,8 @@
         <button id="autoFillBtn" class="btn" type="button">
             ⚡ Условия заполнения расписания
         </button>
-        <button class="btn" type="button">
-            Учебный план
+        <button id="currBtn" class="btn" type="button">
+            📚 Учебный план
         </button>
         <div class="header-auth">
           <span id="authUserLabel" class="muted"></span>
@@ -720,6 +720,177 @@
           </button>
           <button id="teacherDiscSaveBtn" class="btn btn-primary" type="button">
             Сохранить
+          </button>
+        </div>
+      </div>
+    </div>
+
+    <!-- Модалка «📚 Учебный план» (отдельная база uchetlfpstu_plan):
+         кафедры, дисциплины, виды учебной деятельности, карточки плана с
+         часами по группам и семестрам, виды контроля по семестрам.
+         Логика — в js/modules/modals/curriculumModal.js -->
+    <div id="currOverlay" class="modal-overlay hidden">
+      <div class="modal dict-modal curr-modal" id="currBox">
+        <div class="modal-header">
+          <div>
+            <h2 class="modal-title">📚 Учебный план</h2>
+            <div class="modal-subtitle">
+              Отдельная база данных: кафедры, дисциплины, часы по видам
+              учебной деятельности для каждой группы в каждом семестре,
+              виды контроля. Эти часы — ограничение при ручном редактировании
+              и автозаполнении расписания.
+            </div>
+          </div>
+          <button id="currClose" class="icon-btn" aria-label="Закрыть" type="button">
+            ✕
+          </button>
+        </div>
+
+        <div class="modal-body">
+          <!-- Вкладки окна -->
+          <div class="dict-tabs curr-tabs" id="currTabs"></div>
+
+          <!-- Вкладка 1: карточки учебного плана -->
+          <div id="currPaneCards" class="curr-pane">
+            <div class="curr-toolbar">
+              <select id="currFilterCourse" class="select" title="Курс">
+                <option value="">Все курсы</option>
+              </select>
+              <select id="currFilterTerm" class="select" title="Семестр">
+                <option value="">Все семестры</option>
+              </select>
+              <select id="currFilterDept" class="select" title="Кафедра">
+                <option value="">Все кафедры</option>
+              </select>
+              <input
+                id="currSearch"
+                class="select"
+                placeholder="Поиск дисциплины"
+                autocomplete="off"
+              />
+              <button id="currAddCardBtn" class="btn btn-primary" type="button">
+                ＋ Дисциплина в план
+              </button>
+            </div>
+            <div class="dict-table-wrap curr-table-wrap">
+              <table id="currCardsTable" class="table curr-table"></table>
+            </div>
+          </div>
+
+          <!-- Вкладка 2: кафедры -->
+          <div id="currPaneDepartments" class="curr-pane hidden">
+            <div class="hint">
+              Кафедры закрепляются за дисциплинами учебного плана.
+            </div>
+            <div class="curr-inline-add">
+              <input id="currDepName" class="select" placeholder="Название кафедры *" />
+              <input id="currDepShort" class="select" placeholder="Кратко (например: ИТ)" />
+              <button id="currDepAddBtn" class="btn" type="button">Добавить</button>
+            </div>
+            <div class="dict-table-wrap curr-table-wrap">
+              <table id="currDepTable" class="table curr-table"></table>
+            </div>
+          </div>
+
+          <!-- Вкладка 3: виды деятельности + виды контроля -->
+          <div id="currPaneKinds" class="curr-pane hidden">
+            <div class="hint">
+              Виды учебной деятельности — это колонки часов в карточке плана
+              (лекции, лабораторные, практические, КСР/КРВ...). Виды контроля —
+              Экзамен, Диф. зачет, Зачет, Курсовой проект, Курсовая работа.
+            </div>
+            <div class="curr-kinds-cols">
+              <div class="curr-kind-col">
+                <h4>Виды учебной деятельности</h4>
+                <div class="curr-inline-add">
+                  <input id="currAkName" class="select" placeholder="Название *" />
+                  <input id="currAkShort" class="select" placeholder="Кратко (Лек)" />
+                  <button id="currAkAddBtn" class="btn" type="button">Добавить</button>
+                </div>
+                <div class="dict-table-wrap curr-table-wrap">
+                  <table id="currAkTable" class="table curr-table"></table>
+                </div>
+              </div>
+              <div class="curr-kind-col">
+                <h4>Виды контроля</h4>
+                <div class="curr-inline-add">
+                  <input id="currCtName" class="select" placeholder="Название *" />
+                  <button id="currCtAddBtn" class="btn" type="button">Добавить</button>
+                </div>
+                <div class="dict-table-wrap curr-table-wrap">
+                  <table id="currCtTable" class="table curr-table"></table>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <!-- Вкладка 4: дисциплины плана (мета: дисциплина + кафедра) -->
+          <div id="currPaneDisciplines" class="curr-pane hidden">
+            <div class="hint">
+              Здесь дисциплина из справочника закрепляется за кафедрой.
+              Дисциплины, которых нет в списке, можно создать кнопкой ниже.
+            </div>
+            <div class="curr-inline-add">
+              <input id="currNewDiscName" class="select" placeholder="Новая дисциплина *" />
+              <select id="currNewDiscDept" class="select"></select>
+              <button id="currNewDiscAddBtn" class="btn" type="button">
+                Создать дисциплину
+              </button>
+            </div>
+            <div class="dict-table-wrap curr-table-wrap">
+              <table id="currDiscTable" class="table curr-table"></table>
+            </div>
+          </div>
+
+          <!-- Форма карточки плана (под вкладкой «Карточки плана») -->
+          <div id="currCardForm" class="curr-card-form hidden">
+            <div class="curr-card-form-head">
+              <h4 id="currCardFormTitle">Новая дисциплина в плане</h4>
+              <button id="currCardCancelBtn" class="btn" type="button">Отмена</button>
+            </div>
+            <div class="curr-card-fields">
+              <label class="field">
+                <span class="label">Дисциплина</span>
+                <select id="currCardDiscipline" class="select"></select>
+              </label>
+              <label class="field">
+                <span class="label">Курс</span>
+                <select id="currCardCourse" class="select"></select>
+              </label>
+              <label class="field">
+                <span class="label">Семестр (1–8)</span>
+                <select id="currCardTerm" class="select"></select>
+              </label>
+              <label class="field">
+                <span class="label">Общая трудоемкость, ч</span>
+                <input id="currCardTotal" class="select" type="number" min="0" step="1" />
+              </label>
+              <label class="field field-wide">
+                <span class="label">Комментарий</span>
+                <input id="currCardComment" class="select" type="text" />
+              </label>
+            </div>
+
+            <h4 class="curr-section-title">
+              Распределение трудоемкости по видам деятельности
+              <span class="muted">(строка «Все группы» — одинаково для всех)</span>
+            </h4>
+            <div class="dict-table-wrap curr-hours-wrap">
+              <table id="currHoursTable" class="table curr-table"></table>
+            </div>
+            <button id="currAddHourRowBtn" class="btn btn-outline" type="button">
+              ＋ Строка часов
+            </button>
+
+            <h4 class="curr-section-title">Вид контроля по семестрам</h4>
+            <div id="currControlsWrap" class="curr-controls-wrap"></div>
+          </div>
+        </div>
+
+        <div class="modal-footer">
+          <span id="currStatus" class="muted"></span>
+          <button id="currSaveCardBtn" class="btn btn-primary hidden" type="button">
+            Сохранить карточку плана
           </button>
         </div>
       </div>

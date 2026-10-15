@@ -138,6 +138,11 @@ try {
     case 'curriculum_card':
     case 'curriculum_grid':
     case 'curriculum_controls':
+    // UI-эндпоинты модалки «Учебный план»
+    case 'curr_ui_meta':
+    case 'curr_discipline':
+    case 'curr_cards':
+    case 'curr_card':
         require_once __DIR__ . '/../modules/curriculum/curriculum.controller.php';
         curriculumController($method, $entity);
     break;
