@@ -73,7 +73,23 @@ function currUiActivityKinds(): array {
       'id'   => (int)$k['id'],
       'name' => (string)$k['name'],
       'shortName' => (string)($k['short_name'] ?? ''),
+      'lessonTypeId' => isset($k['lesson_type_id']) && $k['lesson_type_id'] !== null
+        ? (int)$k['lesson_type_id'] : null,
     ], repoCurrActivityKinds($conn));
+  });
+}
+
+// Типы занятий основной БД — для выпадающего списка связи
+// «вид деятельности -> тип занятия» в окне учебного плана и справочниках.
+function currUiLessonTypes(mysqli $mainConn): array {
+  return currUiCache('lessonTypes', static function () use ($mainConn) {
+    return array_map(static fn($t) => [
+      'id'        => (int)$t['id'],
+      'name'      => (string)$t['name'],
+      'shortName' => (string)($t['short_name'] ?? ''),
+    ], dbAll($mainConn,
+        "SELECT id, name, short_name FROM lesson_type
+         WHERE is_deleted = 0 ORDER BY name"));
   });
 }
 
@@ -223,9 +239,18 @@ function curriculumController($method, $entity) {
           'departments'   => currUiDepartments(),
           'activityKinds' => currUiActivityKinds(),
           'controlTypes'  => currUiControlTypes(),
+          'lessonTypes'   => currUiLessonTypes($mainConn),
           'disciplines'   => currUiDisciplines($mainConn),
           'groups'        => currUiGroups($mainConn),
         ]);
+        return;
+      }
+
+      // Типы занятий основной БД (для выпадающего списка связи
+      // «вид деятельности -> тип занятие»). Используется справочниками.
+      case 'curr_lesson_types': {
+        if ($method !== 'GET') errorJson('Method not allowed', 405);
+        sendJson(currUiLessonTypes($mainConn));
         return;
       }
 
