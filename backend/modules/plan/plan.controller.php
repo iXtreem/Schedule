@@ -101,6 +101,20 @@ function planController($conn, $method, $entity) {
         errorJson('subject_id and teacher_id required', 400);
       }
 
+      // Есть ли дисциплина в базе «Учебный план» хотя бы для одной группы
+      // (по любому семестру). Нужно, чтобы отличать «данных учебного плана
+      // нет вообще» (тогда не красим) от «для этой группы дисциплины в
+      // плане нет» — во втором случае все типы показываем красными.
+      $currHasDiscipline = false;
+      try {
+        @require_once __DIR__ . '/../curriculum/curriculum.repo.php';
+        if (function_exists('repoCurrDisciplineInPlan')) {
+          $currHasDiscipline = repoCurrDisciplineInPlan(planDB($conn), $subjectId);
+        }
+      } catch (Throwable $e) {
+        error_log('currHasDiscipline check skipped: ' . $e->getMessage());
+      }
+
       $rows = repoPlanLessonTypes($conn, $groupId, $term, $subjectId, $teacherId);
       if (!$rows) {
         // Плана по этой связке нет -> показываем типы из справочника БЕЗ
@@ -138,11 +152,16 @@ function planController($conn, $method, $entity) {
               if (isset($currMap[$tid])) {
                 $r['planned_hours'] = $currMap[$tid]['planned'];
                 $r['done_hours']    = $currMap[$tid]['done'];
+                // дисциплина с этим видом деятельности есть в плане именно
+                // для ЭТОЙ группы (учтён курс группы) -> зелёный в модалке;
+                // false -> красный («не предусмотрено учебным планом»)
+                $r['in_group_plan'] = !empty($currMap[$tid]['inGroupPlan']);
               } else {
                 // типа нет в учебном плане -> обнуляем счётчик старого плана,
                 // чтобы не путать пользователя устаревшими цифрами
                 $r['planned_hours'] = null;
                 $r['done_hours']    = null;
+                $r['in_group_plan'] = false;
               }
             }
             unset($r);
@@ -151,6 +170,27 @@ function planController($conn, $method, $entity) {
         }
       } catch (Throwable $e) {
         error_log('curriculum lesson types merge skipped: ' . $e->getMessage());
+      }
+
+      /* Финальная раскраска типов по учебному плану (фронт читает
+       * in_group_plan):
+       *  - дисциплина вообще не заведена в «Учебном плане» -> null
+       *    (не красим ни зелёным, ни красным — плана нет);
+       *  - дисциплина есть в плане, но не для этой группы/курса или типа
+       *    нет среди видов деятельности -> false (красный);
+       *  - тип предусмотрен планом этой группы -> true (зелёный). */
+      if ($currHasDiscipline) {
+        foreach ($rows as &$r) {
+          if (!array_key_exists('in_group_plan', $r)) {
+            $r['in_group_plan'] = false;
+          }
+        }
+        unset($r);
+      } else {
+        foreach ($rows as &$r) {
+          $r['in_group_plan'] = null;
+        }
+        unset($r);
       }
 
       sendJson($rows);

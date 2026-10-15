@@ -467,6 +467,7 @@ function repoCurrGroupTermGrid(mysqli $conn, int $groupId, int $term): array {
   return dbAll($conn,
     "SELECT c.id AS curriculum_id,
             dm.discipline_id AS discipline_id,
+            c.course AS course,
             COALESCE({$mp}d.name, '(нет в справочнике)') AS discipline_name,
             ch.activity_kind_id, ak.name AS kind_name, ak.short_name,
             ch.hours
@@ -570,6 +571,25 @@ function repoCurrPlannedHours(mysqli $conn, int $groupId, int $term, int $discip
  * пустой массив — если плана по дисциплине нет (тогда ограничение не
  * действует и фронт показывает типы без счётчика).
  */
+/* Есть ли дисциплина основной базы вообще в базе «Учебный план»
+ * (хотя бы в одной карточке, для любой группы/семестра). Используется
+ * модалкой занятия: если плана по дисциплине нет вообще — типы не красим;
+ * если план по дисциплине существует, но не для этой группы — красим. */
+function repoCurrDisciplineInPlan(mysqli $conn, int $disciplineId): bool {
+  if ($disciplineId <= 0) return false;
+  $curr = planTab('curriculum');
+  $dm   = planTab('discipline_meta');
+  $row = dbScalar(
+    $conn,
+    "SELECT 1 FROM {$curr} c
+     JOIN {$dm} dm ON dm.id = c.discipline_id AND dm.is_deleted = 0
+     WHERE dm.discipline_id = ? AND c.is_deleted = 0 LIMIT 1",
+    [$disciplineId],
+    0
+  );
+  return (int)$row === 1;
+}
+
 function repoCurrPlannedDoneByTypes(mysqli $planConn, mysqli $mainConn, int $groupId, int $term, int $disciplineId): array {
   // Плановые часы вида деятельности для группы и семестра
   $grid = repoCurrGroupTermGrid($planConn, $groupId, $term);
@@ -606,8 +626,48 @@ function repoCurrPlannedDoneByTypes(mysqli $planConn, mysqli $mainConn, int $gro
     $result[(int)$t['id']] = [
       'planned' => round($planned, 2),
       'done'    => round($doneMap[(int)$t['id']] ?? 0.0, 2),
+      // есть ли в учебном плане эта дисциплина для ГРУППЫ вообще
+      // (часы группы или строка «Все группы») — см. фильтр ниже
+      'inGroupPlan' => false,
     ];
   }
+
+  /* Дисциплина может стоять в плане другого курса (другая карточка с теми
+   * же семестром и дисциплиной, но другой группы курсов). В сетке расписания
+   * такие часы не показываются, поэтому и тип занятия для этой группы
+   * считается НЕ предусмотренным планом (красный в модалке занятия). */
+  $groupCourse = 0;
+  try {
+    $mp2 = currMainPrefix();
+    $gc = dbScalar(
+      $mainConn,
+      "SELECT COALESCE(admission_year, 0) FROM {$mp2}student_group WHERE id = ? LIMIT 1",
+      [$groupId],
+      0
+    );
+    $ay = (int)($gc ?? 0);
+    if ($ay > 0) {
+      $now = time();
+      $sep = mktime(0, 0, 0, 9, 1, (int)date('Y'));
+      $yearCur = (int)date('Y') + ($now >= $sep ? 1 : 0);
+      $groupCourse = max(0, min(4, $yearCur - $ay));
+    }
+  } catch (Throwable $e) {
+    $groupCourse = 0; // не удалось определить курс — не фильтруем
+  }
+
+  foreach ($result as $tid => &$row) {
+    $row['inGroupPlan'] = true;
+    if ($groupCourse > 0) {
+      $hasForCourse = false;
+      foreach ($byDisc as $g) {
+        if ((int)($g['course'] ?? 0) === $groupCourse) { $hasForCourse = true; break; }
+      }
+      $row['inGroupPlan'] = $hasForCourse;
+    }
+  }
+  unset($row);
+
   return $result;
 }
 

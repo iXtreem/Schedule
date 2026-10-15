@@ -448,6 +448,9 @@
                 autocomplete="off"
               />
               <label class="label" for="typeSelect">Тип занятия</label>
+              <!-- Подсветка типа по «Учебному плану»: зелёный — предусмотрен,
+                   красный — нарушение плана (js/modules/modals/openModal.js) -->
+              <div id="typePlanHint" class="teacher-load-hint hidden"></div>
               <select id="typeSelect" class="select"></select>
             </div>
 
@@ -756,9 +759,7 @@
           <!-- Вкладка 1: карточки учебного плана -->
           <div id="currPaneCards" class="curr-pane">
             <div class="curr-toolbar">
-              <select id="currFilterCourse" class="select" title="Курс">
-                <option value="">Все курсы</option>
-              </select>
+              <!-- Фильтр по курсам убран: поиск по семестрам (1..8) его покрывает -->
               <select id="currFilterTerm" class="select" title="Семестр">
                 <option value="">Все семестры</option>
               </select>

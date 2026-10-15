@@ -634,9 +634,23 @@ function renderTypeOptions(types, placeholder = "— выбери тип —") {
       t.planned_hours !== undefined &&
       t.planned_hours !== "";
     const name = String(t.name || "");
+    // Раскраска по «Учебному плану» (backend/modules/plan/plan.controller.php):
+    //   true  -> зелёный (тип предусмотрен планом этой группы),
+    //   false -> красный (дисциплина в плане есть, но не этот тип/группа),
+    //   null/undefined -> плана нет вообще, не красим.
+    const inPlan =
+      t.in_group_plan === null || t.in_group_plan === undefined
+        ? null
+        : Boolean(t.in_group_plan);
 
     if (!hasPlan) {
-      return { id: t.id, name, _remaining: Infinity, _hasPlan: false };
+      return {
+        id: t.id,
+        name,
+        _remaining: Infinity,
+        _hasPlan: false,
+        _inPlan: inPlan,
+      };
     }
 
     const planned = Number(t.planned_hours ?? 0);
@@ -646,6 +660,7 @@ function renderTypeOptions(types, placeholder = "— выбери тип —") {
       name: `${name} (${formatHours(done)}/${formatHours(planned)})`,
       _remaining: planned - done,
       _hasPlan: true,
+      _inPlan: inPlan,
     };
   });
 
@@ -654,10 +669,54 @@ function renderTypeOptions(types, placeholder = "— выбери тип —") {
   for (const opt of typeSelect.options) {
     if (!opt.value) continue;
     const t = list.find((x) => String(x.id) === String(opt.value));
-    opt.disabled = Boolean(t && t._hasPlan && t._remaining <= 0.0001);
+    if (!t) continue;
+    opt.disabled = Boolean(t._hasPlan && t._remaining <= 0.0001);
+    // Пункты списка: зелёным — доступные по учебному плану, красным — недоступные
+    opt.classList.remove("type-opt-ok", "type-over");
+    if (t._inPlan === true) {
+      opt.classList.add("type-opt-ok");
+      opt.title = "Предусмотрено учебным планом";
+    } else if (t._inPlan === false) {
+      opt.classList.add("type-over");
+      opt.title = "Нарушение учебного плана: этот тип занятия не предусмотрен планом для данной дисциплины и группы";
+    } else {
+      opt.title = "";
+    }
   }
 
+  // Подсветка самого поля выбранным типом + подсказка под полем
+  syncTypePlanHighlight(list);
+
   return list;
+}
+
+// Рамка поля «Тип занятия» по выбранному пункту: зелёная — тип из плана,
+// красная — нарушение учебного плана (как у преподавателей).
+function syncTypePlanHighlight(list) {
+  if (!typeSelect) return;
+  const items = list || modalTypes || [];
+  typeSelect.classList.remove("type-ok", "type-over");
+  const hintEl = document.getElementById("typePlanHint");
+  const cur = items.find((x) => String(x.id) === String(typeSelect.value));
+  if (cur && cur._inPlan === true) {
+    typeSelect.classList.add("type-ok");
+    if (hintEl) {
+      hintEl.classList.remove("hidden", "type-over");
+      hintEl.classList.add("type-ok-text");
+      hintEl.textContent = "✔ Тип предусмотрен учебным планом";
+    }
+  } else if (cur && cur._inPlan === false) {
+    typeSelect.classList.add("type-over");
+    if (hintEl) {
+      hintEl.classList.remove("hidden", "type-ok-text");
+      hintEl.classList.add("type-over-text");
+      hintEl.textContent =
+        "⚠ Нарушение учебного плана: этот тип занятия не предусмотрен планом для данной дисциплины и группы";
+    }
+  } else if (hintEl) {
+    hintEl.classList.add("hidden");
+    hintEl.textContent = "";
+  }
 }
 
 async function tryLoadTypes(groupId) {
