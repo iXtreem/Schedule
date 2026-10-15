@@ -320,6 +320,20 @@ export const api = {
 
   currCard: (id) => requestJson(`${API}?entity=curr_card&id=${id}`, {}, null),
 
+  // Нарушения учебного плана для показанных недель/групп (красная подсветка
+  // занятий в сетке). { weekIds:[..], groupIds:[..] } ->
+  // { violations: { lessonId: {over, planned, done} }, groups: { groupId: over } }
+  currViolations: (weekIds, groupIds) => {
+    const q = new URLSearchParams();
+    q.set("week_ids", (weekIds || []).join(","));
+    q.set("group_ids", (groupIds || []).join(","));
+    return requestJson(
+      `${API}?entity=curr_violations&${q.toString()}`,
+      {},
+      { violations: {}, groups: {} },
+    );
+  },
+
   // payload: { id?, disciplineMetaId, course, term, totalHours, comment,
   //            hours: [{groupId|null, activityKindId, hours}],
   //            controls: [{controlTypeId, terms:[1..24]}] }
