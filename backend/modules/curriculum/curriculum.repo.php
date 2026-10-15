@@ -317,26 +317,47 @@ function repoCurrSave(mysqli $conn, $body): int {
     }
   }
 
-  // UNIQUE (discipline_id, course, term) — не даём дублям.
-  $dupSql = "SELECT id FROM {$curr}
-             WHERE discipline_id = ? AND course = ? AND term = ? AND is_deleted = 0"
-           . ($id > 0 ? " AND id <> ?" : "");
-  $dupParams = [$metaId, $course, $term];
-  if ($id > 0) $dupParams[] = $id;
-  if ((int)dbScalar($conn, $dupSql, $dupParams, 0) > 0) {
-    throw new Exception('Такая дисциплина уже есть в плане на этом курсе/семестре');
-  }
-
+  // В таблице стоит жёсткий UNIQUE (discipline_id, course, term), поэтому
+  // удалённые (is_deleted=1) карточки тоже занимают слот. Если при создании
+  // новой карточки находится «мёртвый» дубль — оживляем его вместо INSERT
+  // (иначе MySQL вернёт Duplicate entry '1-1-1' for key 'uq_curriculum').
   if ($id > 0) {
+    $dupSql = "SELECT id FROM {$curr}
+               WHERE discipline_id = ? AND course = ? AND term = ? AND is_deleted = 0
+                 AND id <> ?";
+    if ((int)dbScalar($conn, $dupSql, [$metaId, $course, $term, $id], 0) > 0) {
+      throw new Exception('Такая дисциплина уже есть в плане на этом курсе/семестре');
+    }
     dbExec($conn,
-      "UPDATE {$curr} SET course = ?, term = ?, total_hours = ?, comment = ?,
-              updated_at = NOW() WHERE id = ?",
-      [$course, $term, $total, $comment, $id]);
+      "UPDATE {$curr} SET discipline_id = ?, course = ?, term = ?, total_hours = ?, comment = ?,
+              is_deleted = 0, updated_at = NOW() WHERE id = ?",
+      [$metaId, $course, $term, $total, $comment, $id]);
   } else {
-    $id = dbInsert($conn,
-      "INSERT INTO {$curr} (discipline_id, course, term, total_hours, comment)
-       VALUES (?, ?, ?, ?, ?)",
-      [$metaId, $course, $term, $total, $comment]);
+    $dead = dbRow($conn,
+      "SELECT id FROM {$curr}
+       WHERE discipline_id = ? AND course = ? AND term = ? AND is_deleted = 1
+       LIMIT 1",
+      [$metaId, $course, $term]);
+    if ($dead) {
+      $id = (int)$dead['id'];
+      dbExec($conn,
+        "UPDATE {$curr} SET total_hours = ?, comment = ?,
+                is_deleted = 0, updated_at = NOW() WHERE id = ?",
+        [$total, $comment, $id]);
+    } else {
+      $live = dbRow($conn,
+        "SELECT id FROM {$curr}
+         WHERE discipline_id = ? AND course = ? AND term = ? AND is_deleted = 0
+         LIMIT 1",
+        [$metaId, $course, $term]);
+      if ($live) {
+        throw new Exception('Такая дисциплина уже есть в плане на этом курсе/семестре');
+      }
+      $id = dbInsert($conn,
+        "INSERT INTO {$curr} (discipline_id, course, term, total_hours, comment)
+         VALUES (?, ?, ?, ?, ?)",
+        [$metaId, $course, $term, $total, $comment]);
+    }
   }
 
   repoCurrReplaceHours($conn, $id, $body['hours'] ?? []);
