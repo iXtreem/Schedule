@@ -5,7 +5,7 @@
  */
 
 $serverName = "localhost";     // XAMPP: MySQL доступен по localhost
-$database   = "UchetLFPSTU";   // Имя базы данных
+$database   = "uchetlfpstu";   // Имя базы данных (схема: База данных/schema.sql)
 $username   = "root";          // Стандартный пользователь XAMPP
 $password   = "";              // В XAMPP пароль root по умолчанию пустой
 
