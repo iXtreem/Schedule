@@ -26,7 +26,156 @@ require_once __DIR__ . '/curriculum.repo.php';
  *   GET    curriculum_grid&group_id=&term=   — часовая сетка плана для группы
  *                                (используется модалкой занятия и автозаполнением);
  *   GET    curriculum_controls&group_id=&term= — виды контроля группы.
+ *
+ * UI-эндпоинты окна «📚 Учебный план» (возвращают поля с camelCase-алиасами,
+ * чтобы фронтенд не зависел от раскладки русских ключей):
+ *   GET  curr_ui_meta            — кафедры + справочник дисциплин основной БД;
+ *   POST curr_discipline         — {id?, discipline_id?, name?, department_id?};
+ *   DELETE curr_discipline&id=.. ;
+ *   GET  curr_cards&course=&term=&department_id=&search=  — карточки плана;
+ *   GET  curr_card&id=..         — карточка + hours[{groupId,activityKindId,hours}]
+ *                                  + controls[{controlTypeId,terms:[..]}];
+ *   POST curr_card               — сохранить карточку (см. repoCurrSave);
+ *   DELETE curr_card&id=..       — удалить карточку;
+ *   GET  curr_hours&curriculum_id=.. — часы карточки (для перечитывания).
  */
+
+// -- helpers для UI-эндпоинтов -------------------------------------------------
+
+function currUiDepartments(): array {
+  static $cache = null;
+  if ($cache !== null) return $cache;
+  $conn = planDB(getDBConnection());
+  $cache = array_map(static fn($d) => [
+    'id'   => (int)$d['id'],
+    'name' => (string)$d['name'],
+    'shortName' => (string)($d['short_name'] ?? ''),
+  ], repoCurrDepartments($conn));
+  return $cache;
+}
+
+function currUiActivityKinds(): array {
+  static $cache = null;
+  if ($cache !== null) return $cache;
+  $conn = planDB(getDBConnection());
+  $cache = array_map(static fn($k) => [
+    'id'   => (int)$k['id'],
+    'name' => (string)$k['name'],
+    'shortName' => (string)($k['short_name'] ?? ''),
+  ], repoCurrActivityKinds($conn));
+  return $cache;
+}
+
+function currUiControlTypes(): array {
+  static $cache = null;
+  if ($cache !== null) return $cache;
+  $conn = planDB(getDBConnection());
+  $cache = array_map(static fn($c) => [
+    'id'   => (int)$c['id'],
+    'name' => (string)$c['name'],
+  ], repoCurrControlTypes($conn));
+  return $cache;
+}
+
+// Дисциплины: берём из справочника основной БД, подтягиваем id метаданной
+// карточки плана (discipline_meta.id), если она уже заведена.
+function currUiDisciplines(mysqli $mainConn): array {
+  $planConn = planDB($mainConn);
+  $dm = planTab('discipline_meta');
+  $meta = [];
+  foreach (dbAll($planConn, "SELECT discipline_id, id, department_id FROM {$dm} WHERE is_deleted = 0") as $m) {
+    $meta[(int)$m['discipline_id']] = $m;
+  }
+  $deps = [];
+  foreach (currUiDepartments() as $d) $deps[$d['id']] = $d['name'];
+
+  $rows = dbAll($mainConn,
+    "SELECT id, name FROM discipline WHERE is_deleted = 0 ORDER BY name");
+  return array_map(static function ($r) use ($meta, $deps) {
+    $id = (int)$r['id'];
+    $m  = $meta[$id] ?? null;
+    return [
+      'id'          => $id,
+      'name'        => (string)$r['name'],
+      'metaId'      => $m ? (int)$m['id'] : null,
+      'departmentId'=> $m && $m['department_id'] ? (int)$m['department_id'] : null,
+      'departmentName' => $m && $m['department_id'] && isset($deps[(int)$m['department_id']])
+        ? $deps[(int)$m['department_id']] : '',
+    ];
+  }, $rows);
+}
+
+// Группы основной БД с курсом (1..4) — для редактора часов по группам.
+function currUiGroups(mysqli $mainConn): array {
+  static $cache = null;
+  if ($cache !== null) return $cache;
+  $cache = array_map(static function ($g) {
+    $year = (int)($g['year'] ?? 0);
+    $course = $year > 0 ? max(1, min(4, $year)) : 0;
+    return [
+      'id'     => (int)$g['id'],
+      'name'   => (string)($g['short_name'] ?: $g['name']),
+      'course' => $course,
+    ];
+  }, dbAll($mainConn,
+      "SELECT id, name, short_name, year FROM student_group
+       WHERE is_deleted = 0 ORDER BY name"));
+  return $cache;
+}
+
+// Карточка плана для формы: часы -> [{groupId, activityKindId, hours}],
+// контроль -> [{controlTypeId, terms:[..]}].
+function currUiCard(mysqli $planConn, int $id): array {
+  $card = repoCurrCard($planConn, $id);
+  $hours = [];
+  foreach (($card['hours'] ?? []) as $h) {
+    $hours[] = [
+      'groupId'        => $h['group_id'] !== null ? (int)$h['group_id'] : null,
+      'activityKindId' => (int)$h['activity_kind_id'],
+      'hours'          => (float)$h['hours'],
+    ];
+  }
+  $ctrl = [];
+  foreach (($card['controls'] ?? []) as $c) {
+    $ctId = (int)$c['control_type_id'];
+    $t    = (int)$c['term'];
+    if (!isset($ctrl[$ctId])) $ctrl[$ctId] = ['controlTypeId' => $ctId, 'terms' => []];
+    $ctrl[$ctId]['terms'][] = $t;
+  }
+  return [
+    'id'             => (int)$card['id'],
+    'disciplineMetaId' => (int)$card['discipline_id'],
+    'disciplineId'   => (int)($card['discipline_id'] ?? 0),
+    'disciplineName' => (string)($card['discipline_name'] ?? ''),
+    'course'         => (int)$card['course'],
+    'term'           => (int)$card['term'],
+    'totalHours'     => (float)($card['total_hours'] ?? 0),
+    'comment'        => (string)($card['comment'] ?? ''),
+    'hours'          => $hours,
+    'controls'       => array_values($ctrl),
+  ];
+}
+// Сохранение карточки из UI: camelCase-ключи -> формат repoCurrSave.
+function currUiNormalizeCardBody($body): array {
+  return [
+    'id'               => (int)($body['id'] ?? 0),
+    'discipline_meta_id' => (int)($body['disciplineMetaId'] ?? $body['discipline_meta_id'] ?? 0),
+    'course'           => (int)($body['course'] ?? 0),
+    'term'             => (int)($body['term'] ?? 0),
+    'total_hours'      => (float)($body['totalHours'] ?? $body['total_hours'] ?? 0),
+    'comment'          => (string)($body['comment'] ?? ''),
+    'hours'            => array_map(static fn($h) => [
+      'group_id'         => isset($h['groupId']) && $h['groupId'] ? (int)$h['groupId'] : null,
+      'activity_kind_id' => (int)($h['activityKindId'] ?? $h['activity_kind_id'] ?? 0),
+      'hours'            => (float)($h['hours'] ?? 0),
+    ], is_array($body['hours'] ?? null) ? $body['hours'] : []),
+    'controls'         => array_map(static fn($c) => [
+      'control_type_id' => (int)($c['controlTypeId'] ?? $c['control_type_id'] ?? 0),
+      'terms'           => is_array($c['terms'] ?? null) ? $c['terms'] : [],
+    ], is_array($body['controls'] ?? null) ? $body['controls'] : []),
+  ];
+}
+
 function curriculumController($method, $entity) {
   // Все таблицы живут в базе учебного плана — получаем её соединение
   // (с авто-созданием схемы и справочников по умолчанию).
@@ -35,6 +184,127 @@ function curriculumController($method, $entity) {
 
   try {
     switch ($entity) {
+
+      // ---------- UI-эндпоинты окна «📚 Учебный план» ----------
+
+      case 'curr_ui_meta': {
+        if ($method !== 'GET') errorJson('Method not allowed', 405);
+        sendJson([
+          'departments'   => currUiDepartments(),
+          'activityKinds' => currUiActivityKinds(),
+          'controlTypes'  => currUiControlTypes(),
+          'disciplines'   => currUiDisciplines($mainConn),
+          'groups'        => currUiGroups($mainConn),
+        ]);
+        return;
+      }
+
+      // Дисциплина плана: создать (из справочника основной БД или новой
+      // строкой) / назначить кафедру / удалить (soft).
+      case 'curr_discipline': {
+        if ($method === 'POST' || $method === 'PUT') {
+          $body = getJsonBody() ?? [];
+          $id = (int)($body['id'] ?? 0); // id discipline_meta
+          $disciplineId = (int)($body['disciplineId'] ?? $body['discipline_id'] ?? 0);
+
+          // Если передали name вместо выбора из справочника — заводим дисциплину.
+          if ($disciplineId <= 0 && trim((string)($body['name'] ?? '')) !== '') {
+            $newName = trim((string)$body['name']);
+            $exists = (int)dbScalar($mainConn,
+              "SELECT id FROM discipline WHERE name = ? AND is_deleted = 0", [$newName], 0);
+            if ($exists > 0) {
+              $disciplineId = $exists;
+            } else {
+              $disciplineId = dbInsert($mainConn,
+                "INSERT INTO discipline (name, short_name) VALUES (?, ?)",
+                [$newName, trim((string)($body['shortName'] ?? '')) ?: $newName]);
+            }
+          }
+          $body['discipline_id'] = $disciplineId;
+          $send = ['success' => true,
+                   'id' => repoCurrDisciplineSave($conn, $id ?: null, $body)];
+          sendJson($send);
+          return;
+        }
+        if ($method === 'DELETE') {
+          repoCurrDisciplineDelete($conn, (int)getQuery('id', 0));
+          sendJson(['success' => true]);
+          return;
+        }
+        errorJson('Method not allowed', 405);
+      }
+
+      // Список карточек плана для таблицы окна.
+      case 'curr_cards': {
+        if ($method !== 'GET') errorJson('Method not allowed', 405);
+        $rows = repoCurrList(
+          $conn,
+          (int)getQuery('course', 0),
+          (int)getQuery('term', 0),
+          (int)getQuery('department_id', 0),
+          trim((string)getQuery('search', ''))
+        );
+        sendJson(array_map(static fn($r) => [
+          'id'             => (int)$r['id'],
+          'disciplineName' => (string)$r['discipline_name'],
+          'departmentName' => (string)($r['department_name'] ?? ''),
+          'departmentId'   => $r['department_id'] !== null ? (int)$r['department_id'] : null,
+          'course'         => (int)$r['course'],
+          'term'           => (int)$r['term'],
+          'totalHours'     => (float)($r['total_hours'] ?? 0),
+          'comment'        => (string)($r['comment'] ?? ''),
+          // сводка часов по видам деятельности (сумма по всем группам карточки)
+          'hoursSummary'   => array_values(array_reduce(
+            $r['hours'] ?? [],
+            static function ($acc, $h) {
+              $k = (int)$h['activity_kind_id'];
+              if (!isset($acc[$k])) {
+                $acc[$k] = ['kindId' => $k, 'kindName' => (string)$h['kind_name'],
+                            'shortName' => (string)($h['short_name'] ?? ''), 'hours' => 0.0];
+              }
+              $acc[$k]['hours'] += (float)$h['hours'];
+              return $acc;
+            },
+            []
+          )),
+          'controlsSummary' => array_values(array_reduce(
+            $r['controls'] ?? [],
+            static function ($acc, $c) {
+              $k = (int)$c['control_type_id'];
+              if (!isset($acc[$k])) {
+                $acc[$k] = ['controlTypeId' => $k, 'name' => (string)$c['name'], 'terms' => []];
+              }
+              $acc[$k]['terms'][] = (int)$c['term'];
+              return $acc;
+            },
+            []
+          )),
+        ], $rows));
+        return;
+      }
+
+      // Одна карточка для формы редактирования.
+      case 'curr_card': {
+        if ($method === 'GET') {
+          sendJson(currUiCard($conn, (int)getQuery('id', 0)));
+          return;
+        }
+        if ($method === 'POST' || $method === 'PUT') {
+          $body = getJsonBody();
+          if (!$body) errorJson('Invalid JSON body', 400);
+          $id = repoCurrSave($conn, currUiNormalizeCardBody($body));
+          sendJson(['success' => true, 'id' => $id, 'card' => currUiCard($conn, $id)]);
+          return;
+        }
+        if ($method === 'DELETE') {
+          repoCurrDelete($conn, (int)getQuery('id', 0));
+          sendJson(['success' => true]);
+          return;
+        }
+        errorJson('Method not allowed', 405);
+      }
+
+      // ---------- низкоуровневые эндпоинты (для интеграций) ----------
 
       case 'curriculum_meta': {
         if ($method !== 'GET') errorJson('Method not allowed', 405);

@@ -18,6 +18,9 @@ import { initDictModal } from "./js/modules/modals/dictModal.js";
 import { initAutoFillModal } from "./js/modules/modals/autoFillModal.js";
 // Окно «Дисциплины преподавателя» (кнопка «Дисциплины» во вкладке преподавателей)
 import { initTeacherDisciplinesModal } from "./js/modules/modals/teacherDisciplinesModal.js";
+// Окно «📚 Учебный план» (отдельная база: кафедры, дисциплины, часы по группам
+// и семестрам, виды контроля) — источник ограничения часов расписания
+import { initCurriculumModal } from "./js/modules/modals/curriculumModal.js";
 import { ensureBellLoaded, setBellSchedules } from "./js/modules/modals/bellStore.js";
 import { filterByName } from "./js/modules/modals/searchModal.js";
 
@@ -270,6 +273,8 @@ async function init() {
   initAutoFillModal();
   // Обработчики окна «Дисциплины преподавателя» — тоже сразу.
   initTeacherDisciplinesModal();
+  // Кнопка «📚 Учебный план» — окно настроек учебного плана (база plan).
+  initCurriculumModal();
   // Кнопка «⚡ Семестр» (автосоздание недель) — тоже привязываем сразу,
   // до любых обращений к серверу.
   initGenerateWeeks();

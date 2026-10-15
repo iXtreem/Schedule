@@ -301,4 +301,98 @@ export const api = {
       body: JSON.stringify(payload),
       throwOnError: true,
     }),
+
+  // ===== Окно «📚 Учебный план» (отдельная база uchetlfpstu_plan) =====
+  // meta: { departments, activityKinds, controlTypes, disciplines, groups }
+  currUiMeta: () => requestJson(`${API}?entity=curr_ui_meta`, {}, null),
+
+  // Карточки плана: [{ id, disciplineName, departmentName, course, term,
+  //   totalHours, hoursSummary:[{kindId,kindName,shortName,hours}],
+  //   controlsSummary:[{controlTypeId,name,terms:[..]}] }]
+  currCards: (filter = {}) => {
+    const q = new URLSearchParams();
+    if (filter.course) q.set("course", filter.course);
+    if (filter.term) q.set("term", filter.term);
+    if (filter.departmentId) q.set("department_id", filter.departmentId);
+    if (filter.search) q.set("search", filter.search);
+    return requestJson(`${API}?entity=curr_cards&${q.toString()}`, {}, []);
+  },
+
+  currCard: (id) => requestJson(`${API}?entity=curr_card&id=${id}`, {}, null),
+
+  // payload: { id?, disciplineMetaId, course, term, totalHours, comment,
+  //            hours: [{groupId|null, activityKindId, hours}],
+  //            controls: [{controlTypeId, terms:[1..24]}] }
+  saveCurrCard: (payload) =>
+    requestJson(`${API}?entity=curr_card`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(payload),
+      throwOnError: true,
+    }),
+
+  deleteCurrCard: (id) =>
+    requestJson(`${API}?entity=curr_card&id=${id}`, {
+      method: "DELETE",
+      throwOnError: true,
+    }),
+
+  // Дисциплина плана: создать/назначить кафедру.
+  // payload: { id?, disciplineId?, name?, shortName?, departmentId? }
+  saveCurrDiscipline: (payload) =>
+    requestJson(`${API}?entity=curr_discipline`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(payload),
+      throwOnError: true,
+    }),
+
+  deleteCurrDiscipline: (id) =>
+    requestJson(`${API}?entity=curr_discipline&id=${id}`, {
+      method: "DELETE",
+      throwOnError: true,
+    }),
+
+  // Кафедры / виды деятельности / виды контроля (низкоуровневые CRUD)
+  saveCurrDepartment: (payload) =>
+    requestJson(`${API}?entity=curriculum_department`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(payload),
+      throwOnError: true,
+    }),
+
+  deleteCurrDepartment: (id) =>
+    requestJson(`${API}?entity=curriculum_department&id=${id}`, {
+      method: "DELETE",
+      throwOnError: true,
+    }),
+
+  saveCurrActivityKind: (payload) =>
+    requestJson(`${API}?entity=curriculum_activity`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(payload),
+      throwOnError: true,
+    }),
+
+  deleteCurrActivityKind: (id) =>
+    requestJson(`${API}?entity=curriculum_activity&id=${id}`, {
+      method: "DELETE",
+      throwOnError: true,
+    }),
+
+  saveCurrControlType: (payload) =>
+    requestJson(`${API}?entity=curriculum_control_type`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(payload),
+      throwOnError: true,
+    }),
+
+  deleteCurrControlType: (id) =>
+    requestJson(`${API}?entity=curriculum_control_type&id=${id}`, {
+      method: "DELETE",
+      throwOnError: true,
+    }),
 };
