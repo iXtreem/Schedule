@@ -38,12 +38,14 @@ CREATE TABLE IF NOT EXISTS discipline_meta (
 
 -- Виды учебной деятельности (колонки часов) ----------------------------------
 CREATE TABLE IF NOT EXISTS activity_kind (
-  id         INT NOT NULL AUTO_INCREMENT PRIMARY KEY,
-  name       VARCHAR(100) NOT NULL,            -- «Лекции», «Лабораторные»...
-  short_name VARCHAR(30)  NULL,
-  sort_order INT NOT NULL DEFAULT 0,
-  is_deleted TINYINT(1) NOT NULL DEFAULT 0,
-  UNIQUE KEY uq_activity_name (name)
+  id             INT NOT NULL AUTO_INCREMENT PRIMARY KEY,
+  name           VARCHAR(100) NOT NULL,            -- «Лекции», «Лабораторные»...
+  short_name     VARCHAR(30)  NULL,
+  lesson_type_id INT NULL,                     -- связь с типом занятия (lesson_type.id)
+  sort_order     INT NOT NULL DEFAULT 0,
+  is_deleted     TINYINT(1)   NOT NULL DEFAULT 0,
+  UNIQUE KEY uq_activity_name (name),
+  KEY idx_ak_lesson_type (lesson_type_id)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
 -- Карточка учебного плана: дисциплина + курс + семестр -----------------------

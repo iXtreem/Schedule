@@ -173,13 +173,17 @@ function planCreateSchema(mysqli $conn, string $prefix) {
     KEY idx_dm_department (department_id)
   ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4");
 
+  // lesson_type_id — явная связь вида деятельности с типом занятия основной
+  // базы; если NULL — сопоставление по имени/сокращению (currKindMatchesLessonType).
   $conn->query("CREATE TABLE IF NOT EXISTS {$p}activity_kind (
-    id         INT NOT NULL AUTO_INCREMENT PRIMARY KEY,
-    name       VARCHAR(100) NOT NULL,
-    short_name VARCHAR(30)  NULL,
-    sort_order INT NOT NULL DEFAULT 0,
-    is_deleted TINYINT(1) NOT NULL DEFAULT 0,
-    UNIQUE KEY uq_activity_name (name)
+    id             INT NOT NULL AUTO_INCREMENT PRIMARY KEY,
+    name           VARCHAR(100) NOT NULL,
+    short_name     VARCHAR(30)  NULL,
+    lesson_type_id INT NULL,
+    sort_order     INT NOT NULL DEFAULT 0,
+    is_deleted     TINYINT(1) NOT NULL DEFAULT 0,
+    UNIQUE KEY uq_activity_name (name),
+    KEY idx_ak_lesson_type (lesson_type_id)
   ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4");
 
   $conn->query("CREATE TABLE IF NOT EXISTS {$p}curriculum (
