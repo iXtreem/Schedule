@@ -405,9 +405,14 @@ function repoDoneHoursByGroupSubjectType($conn, $groupId, $subjectId, $typeId, $
  * тогда ограничение не действует и обычная работа программы не блокируется.
  */
 function repoCurriculumPlannedHoursSafe($conn, $groupId, $term, $subjectId, $typeId): float {
+  @require_once __DIR__ . '/../curriculum/curriculum.repo.php';
   if (!function_exists('repoCurrPlannedHours')) return 0.0;
   try {
-    return repoCurrPlannedHours($conn, (int)$groupId, (int)$term, (int)$subjectId, (int)$typeId);
+    // Глобальное соединение с планом — для строгого режима сопоставления
+    // «вид деятельности <-> тип занятия» (см. currRowMatchesLessonType).
+    $planConn = planDB($conn);
+    $GLOBALS['__curr_plan_conn'] = $planConn;
+    return repoCurrPlannedHours($planConn, (int)$groupId, (int)$term, (int)$subjectId, (int)$typeId);
   } catch (Throwable $e) {
     return 0.0;
   }

@@ -227,6 +227,9 @@ function curriculumController($method, $entity) {
   // (с авто-созданием схемы и справочников по умолчанию).
   $mainConn = getDBConnection();
   $conn = planDB($mainConn);
+  // Соединение с планом доступно глобально — нужно строгому сопоставлению
+  // «вид деятельности <-> тип занятия» внутри репозитория.
+  $GLOBALS['__curr_plan_conn'] = $conn;
 
   try {
     switch ($entity) {
