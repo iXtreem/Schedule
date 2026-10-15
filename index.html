@@ -796,31 +796,24 @@
             </div>
           </div>
 
-          <!-- Вкладка 3: виды деятельности + виды контроля -->
+          <!-- Вкладка 3 (скрыта из навигации): виды деятельности + виды контроля.
+               Справочники перенесены в окно «Справочники», здесь — только просмотр. -->
           <div id="currPaneKinds" class="curr-pane hidden">
             <div class="hint">
-              Виды учебной деятельности — это колонки часов в карточке плана
-              (лекции, лабораторные, практические, КСР/КРВ...). Виды контроля —
-              Экзамен, Диф. зачет, Зачет, Курсовой проект, Курсовая работа.
+              Виды учебной деятельности и виды контроля редактируются в окне
+              «📋 Справочники» (вкладки «Виды деятельности» и «Виды контроля»).
+              Учебный план использует те же данные. Тип занятия связан с видом
+              деятельности и используется при подсветке в ручном заполнении.
             </div>
             <div class="curr-kinds-cols">
               <div class="curr-kind-col">
                 <h4>Виды учебной деятельности</h4>
-                <div class="curr-inline-add">
-                  <input id="currAkName" class="select" placeholder="Название *" />
-                  <input id="currAkShort" class="select" placeholder="Кратко (Лек)" />
-                  <button id="currAkAddBtn" class="btn" type="button">Добавить</button>
-                </div>
                 <div class="dict-table-wrap curr-table-wrap">
                   <table id="currAkTable" class="table curr-table"></table>
                 </div>
               </div>
               <div class="curr-kind-col">
                 <h4>Виды контроля</h4>
-                <div class="curr-inline-add">
-                  <input id="currCtName" class="select" placeholder="Название *" />
-                  <button id="currCtAddBtn" class="btn" type="button">Добавить</button>
-                </div>
                 <div class="dict-table-wrap curr-table-wrap">
                   <table id="currCtTable" class="table curr-table"></table>
                 </div>

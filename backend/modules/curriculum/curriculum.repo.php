@@ -85,18 +85,31 @@ function repoCurrActivityKindSave(mysqli $conn, ?int $id, $body): int {
   $ltid   = repoCurrNormalizeLessonTypeId($conn, $body);
 
   if ($id && $id > 0) {
-    if ($ltid === -1) { // поле не прислали — не меняем связь
+    if ($ltid === -1) { // поле не прислали — оставляем связь как есть
       dbExec($conn, "UPDATE {$t} SET name = ?, short_name = ?, sort_order = ? WHERE id = ?",
         [$name, $short, $sort, $id]);
+      $ltid = (int)dbScalar($conn, "SELECT lesson_type_id FROM {$t} WHERE id = ?", [$id], 0);
     } else {
       dbExec($conn, "UPDATE {$t} SET name = ?, short_name = ?, sort_order = ?, lesson_type_id = ? WHERE id = ?",
         [$name, $short, $sort, $ltid, $id]);
     }
+    // Автосинхронизация со справочником «Типы занятий»: если связь не
+    // выбрана вручную — подбираем тип занятия по совпадению названия.
+    if (!$ltid) {
+      $auto = repoCurrAutoLinkLessonType($conn, $id, $name, $short);
+      if ($auto) $ltid = $auto;
+    }
+    repoCurrKindLinkCacheReset();
     return $id;
   }
   $newId = dbInsert($conn,
     "INSERT INTO {$t} (name, short_name, sort_order, lesson_type_id) VALUES (?, ?, ?, ?)",
     [$name, $short, $sort, $ltid === -1 ? null : $ltid]);
+  if (!$ltid) {
+    $auto = repoCurrAutoLinkLessonType($conn, $newId, $name, $short);
+    if ($auto) $ltid = $auto;
+  }
+  repoCurrKindLinkCacheReset();
   return $newId;
 }
 
@@ -554,18 +567,20 @@ function repoCurrKindLinkCacheReset(): void {
  * Вызывается после сохранения вида: если связь не указана явно, пробуем
  * найти тип занятия основной БД с похожим названием и проставить его —
  * так справочник и учебный план всегда остаются идентичными.
+ * Возвращает id найденного типа занятия (0 — совпадения нет).
  */
-function repoCurrAutoLinkLessonType(mysqli $planConn, int $kindId, string $name, ?string $shortName): void {
-  if ($kindId <= 0) return;
+function repoCurrAutoLinkLessonType(mysqli $planConn, int $kindId, string $name, ?string $shortName): int {
+  if ($kindId <= 0) return 0;
   $mp = currMainPrefix();
   $types = dbAll($planConn, "SELECT id, name FROM {$mp}lesson_type WHERE is_deleted = 0");
   foreach ($types as $ty) {
     if (currKindMatchesLessonType($name, (string)($shortName ?? ''), (string)$ty['name'])) {
       $t = planTab('activity_kind');
       dbExec($planConn, "UPDATE {$t} SET lesson_type_id = ? WHERE id = ?", [(int)$ty['id'], $kindId]);
-      return;
+      return (int)$ty['id'];
     }
   }
+  return 0;
 }
 
 // Вид контроля по группе/семестру (для отображения «Экзамен/Зачет» в модалке)
