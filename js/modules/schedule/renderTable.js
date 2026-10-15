@@ -12,6 +12,78 @@ import {
     isDateInCurrentWeek,
 } from "./dateUtils.js";
 import { DAY_NAMES } from "../../LoadFromBD/bd.js";
+import { api } from "../../LoadFromBD/api.js";
+
+// ---------------------------------------------------------------------------
+// Красная подсветка занятий, нарушающих «📚 Учебный план» (см. вкладка
+// «Учебный план» → карточки с часами по группам и семестрам).
+//   * state.currViolations = { lessonId: {over, planned, done} } — нарушения
+//     приходят С СЕРВЕРА (entity=curr_violations), фронтенд правила не дублирует;
+//   * пересчёт выполняется после каждой перерисовки таблицы и через 1.5 с
+//     после сохранения/удаления занятия (когда обновлённые часы уже в БД);
+//   * под таблицей показывается баннер #currPlanWarning — красным текстом,
+//     как и предупреждения по преподавателям.
+// ---------------------------------------------------------------------------
+
+let planCheckTimer = null;
+
+function fmtH(v) {
+  const n = Number(v ?? 0);
+  return String(Math.round(n * 100) / 100);
+}
+
+// Немедленная перерисовка сетки с текущими данными нарушений
+export function repaintCurrViolations() {
+    clearTimeout(planCheckTimer);
+    renderTable();
+}
+
+// Перерисовать сетку и пересчитать нарушения учебного плана на сервере
+export async function refreshCurrViolations() {
+    clearTimeout(planCheckTimer);
+    if (!state.currentWeekId) return;
+    const selectedIds = state.selectedGroupIds.map(Number).filter(Boolean);
+    if (!selectedIds.length) return;
+
+    let res = null;
+    try {
+        res = await api.currViolations([state.currentWeekId], selectedIds);
+    } catch (e) {
+        console.warn("curr_violations: база учебного плана недоступна?", e);
+    }
+    state.currViolations = res?.violations || {};
+    state.currViolationGroups = res?.groups || {};
+    renderTable();
+}
+
+// Вызывается из модалки занятия ПОСЛЕ сохранения/удаления: даём серверу
+// записать новые часы и пересчитываем подсветку.
+export function scheduleCurrViolationsRefresh(delay = 1500) {
+    clearTimeout(planCheckTimer);
+    planCheckTimer = setTimeout(() => refreshCurrViolations(), delay);
+}
+
+function applyCurrPlanBanner() {
+    const banner = document.getElementById("currPlanWarning");
+    if (!banner) return;
+    const groups = state.currViolationGroups || {};
+    const ids = Object.keys(groups);
+    if (!ids.length) {
+        banner.classList.add("hidden");
+        banner.textContent = "";
+        return;
+    }
+    const nameOf = (id) => {
+        const g = (state.groups || []).find((x) => Number(x.id) === Number(id));
+        return g ? g.name || g.short_name || String(id) : `группа ${id}`;
+    };
+    banner.innerHTML =
+        "⚠️ Нарушение учебного плана (часов больше, чем в плане): " +
+        ids
+            .map((id) => `${nameOf(id)} — сверх плана ${fmtH(groups[id])} ч`)
+            .join("; ");
+    banner.classList.remove("hidden");
+}
 
 export function renderTable() {
     const selectedIds = state.selectedGroupIds.map(Number);
@@ -176,11 +248,26 @@ export function renderTable() {
                                   ? ' <span class="lesson-hours">(1 час)</span>'
                                   : "";
 
+                          // Нарушение учебного плана: часы этого занятия
+                          // превышают плановые часы по дисциплине/виду
+                          // (данные с сервера, entity=curr_violations).
+                          const vInfo = lesson.id
+                              ? (state.currViolations || {})[lesson.id] ||
+                                (state.currViolations || {})[String(lesson.id)]
+                              : null;
+                          const warnCls = vInfo
+                              ? " lesson-cell--plan-warn"
+                              : "";
+                          const warnTitle = vInfo
+                              ? `Нарушение учебного плана: ${fmtH(vInfo.done)} ч > план ${fmtH(vInfo.planned)} ч (сверх ${fmtH(vInfo.over)} ч)`
+                              : "";
+
                           return `
-                                <div class="lesson-cell">
+                                <div class="lesson-cell${warnCls}"${vInfo ? ` title="${escapeHtml(warnTitle)}"` : ""}>
                                 <div class="lesson-subject">${subjectName}${hourSuffix}</div>
                                 <div class="${typeClass}">${typeName || ""}</div>
                                 <div class="lesson-teacher muted">${teacherShort}</div>
+                                ${vInfo ? `<div class="lesson-plan-warn-text">⚠ план: сверх ${fmtH(vInfo.over)} ч</div>` : ""}
                                 </div>
                                 `;
                       })()
