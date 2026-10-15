@@ -42,39 +42,49 @@ require_once __DIR__ . '/curriculum.repo.php';
 
 // -- helpers для UI-эндпоинтов -------------------------------------------------
 
+// ВАЖНО: под Apache mod_php процесс переиспользуется между запросами,
+// поэтому static-кэш может устаревать. Кэш живёт в $GLOBALS и сбрасывается
+// в начале каждого HTTP-запроса (см. curriculumController).
+function currUiCache(string $key, callable $loader) {
+  if (!isset($GLOBALS['__curr_cache']) || !is_array($GLOBALS['__curr_cache'])) {
+    $GLOBALS['__curr_cache'] = [];
+  }
+  if (!array_key_exists($key, $GLOBALS['__curr_cache'])) {
+    $GLOBALS['__curr_cache'][$key] = $loader();
+  }
+  return $GLOBALS['__curr_cache'][$key];
+}
+
 function currUiDepartments(): array {
-  static $cache = null;
-  if ($cache !== null) return $cache;
-  $conn = planDB(getDBConnection());
-  $cache = array_map(static fn($d) => [
-    'id'   => (int)$d['id'],
-    'name' => (string)$d['name'],
-    'shortName' => (string)($d['short_name'] ?? ''),
-  ], repoCurrDepartments($conn));
-  return $cache;
+  return currUiCache('departments', static function () {
+    $conn = planDB(getDBConnection());
+    return array_map(static fn($d) => [
+      'id'   => (int)$d['id'],
+      'name' => (string)$d['name'],
+      'shortName' => (string)($d['short_name'] ?? ''),
+    ], repoCurrDepartments($conn));
+  });
 }
 
 function currUiActivityKinds(): array {
-  static $cache = null;
-  if ($cache !== null) return $cache;
-  $conn = planDB(getDBConnection());
-  $cache = array_map(static fn($k) => [
-    'id'   => (int)$k['id'],
-    'name' => (string)$k['name'],
-    'shortName' => (string)($k['short_name'] ?? ''),
-  ], repoCurrActivityKinds($conn));
-  return $cache;
+  return currUiCache('activityKinds', static function () {
+    $conn = planDB(getDBConnection());
+    return array_map(static fn($k) => [
+      'id'   => (int)$k['id'],
+      'name' => (string)$k['name'],
+      'shortName' => (string)($k['short_name'] ?? ''),
+    ], repoCurrActivityKinds($conn));
+  });
 }
 
 function currUiControlTypes(): array {
-  static $cache = null;
-  if ($cache !== null) return $cache;
-  $conn = planDB(getDBConnection());
-  $cache = array_map(static fn($c) => [
-    'id'   => (int)$c['id'],
-    'name' => (string)$c['name'],
-  ], repoCurrControlTypes($conn));
-  return $cache;
+  return currUiCache('controlTypes', static function () {
+    $conn = planDB(getDBConnection());
+    return array_map(static fn($c) => [
+      'id'   => (int)$c['id'],
+      'name' => (string)$c['name'],
+    ], repoCurrControlTypes($conn));
+  });
 }
 
 // Дисциплины: берём из справочника основной БД, подтягиваем id метаданной
@@ -106,21 +116,30 @@ function currUiDisciplines(mysqli $mainConn): array {
 }
 
 // Группы основной БД с курсом (1..4) — для редактора часов по группам.
+// Курс считаем от года поступления относительно текущего учебного года:
+// поступившие в этом году — 1 курс, в прошлом — 2 курс и т.д.
+function currAcademicYearStart(): int {
+  $y = (int)date('Y');
+  // С 1 сентября начинается новый учебный год.
+  return (int)date('n') >= 9 ? $y : $y - 1;
+}
+
 function currUiGroups(mysqli $mainConn): array {
-  static $cache = null;
-  if ($cache !== null) return $cache;
-  $cache = array_map(static function ($g) {
-    $year = (int)($g['year'] ?? 0);
-    $course = $year > 0 ? max(1, min(4, $year)) : 0;
-    return [
-      'id'     => (int)$g['id'],
-      'name'   => (string)($g['short_name'] ?: $g['name']),
-      'course' => $course,
-    ];
-  }, dbAll($mainConn,
-      "SELECT id, name, short_name, year FROM student_group
-       WHERE is_deleted = 0 ORDER BY name"));
-  return $cache;
+  return currUiCache('groups', static function () use ($mainConn) {
+    $ayStart = currAcademicYearStart();
+    return array_map(static function ($g) use ($ayStart) {
+      $year = (int)($g['admission_year'] ?? 0);
+      $course = $year > 0 ? max(1, min(8, $ayStart - $year + 1)) : 0;
+      return [
+        'id'            => (int)$g['id'],
+        'name'          => (string)($g['short_name'] ?: $g['name']),
+        'admissionYear' => $year ?: null,
+        'course'        => $course,
+      ];
+    }, dbAll($mainConn,
+        "SELECT id, name, short_name, admission_year FROM student_group
+         WHERE is_deleted = 0 ORDER BY name"));
+  });
 }
 
 // Карточка плана для формы: часы -> [{groupId, activityKindId, hours}],
