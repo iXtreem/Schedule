@@ -21,61 +21,67 @@
 // curriculum_control_type).
 import { api } from "../../LoadFromBD/api.js";
 
-const openBtn = document.getElementById("currBtn");
-const overlay = document.getElementById("currOverlay");
-const closeBtn = document.getElementById("currClose");
-const tabsWrap = document.getElementById("currTabs");
-const statusEl = document.getElementById("currStatus");
+// ВАЖНО: элементы ищем ЛЕНИВО (в момент вызова), а не на этапе загрузки модуля.
+// Иначе, если ES-модуль выполнится раньше, чем браузер разберёт нижнюю часть
+// index.html, getElementById вернёт null — обработчик к кнопке
+// «📚 Учебный план» не привяжется и «нажатие ничего не делает».
+const $id = (name) => document.getElementById(name);
 
-const panes = {
-  cards: document.getElementById("currPaneCards"),
-  departments: document.getElementById("currPaneDepartments"),
-  kinds: document.getElementById("currPaneKinds"),
-  disciplines: document.getElementById("currPaneDisciplines"),
-};
+const openBtn = () => $id("currBtn");
+const overlay = () => $id("currOverlay");
+const closeBtn = () => $id("currClose");
+const tabsWrap = () => $id("currTabs");
+const statusEl = () => $id("currStatus");
+
+const panes = () => ({
+  cards: $id("currPaneCards"),
+  departments: $id("currPaneDepartments"),
+  kinds: $id("currPaneKinds"),
+  disciplines: $id("currPaneDisciplines"),
+});
 
 // Фильтры списка карточек
-const filterCourse = document.getElementById("currFilterCourse");
-const filterTerm = document.getElementById("currFilterTerm");
-const filterDept = document.getElementById("currFilterDept");
-const searchInput = document.getElementById("currSearch");
-const addCardBtn = document.getElementById("currAddCardBtn");
-const cardsTable = document.getElementById("currCardsTable");
+const filterCourse = () => $id("currFilterCourse");
+const filterTerm = () => $id("currFilterTerm");
+const filterDept = () => $id("currFilterDept");
+const searchInput = () => $id("currSearch");
+const addCardBtn = () => $id("currAddCardBtn");
+const cardsTable = () => $id("currCardsTable");
 
 // Кафедры
-const depNameInput = document.getElementById("currDepName");
-const depShortInput = document.getElementById("currDepShort");
-const depAddBtn = document.getElementById("currDepAddBtn");
-const depTable = document.getElementById("currDepTable");
+const depNameInput = () => $id("currDepName");
+const depShortInput = () => $id("currDepShort");
+const depAddBtn = () => $id("currDepAddBtn");
+const depTable = () => $id("currDepTable");
 
 // Виды деятельности / виды контроля
-const akNameInput = document.getElementById("currAkName");
-const akShortInput = document.getElementById("currAkShort");
-const akAddBtn = document.getElementById("currAkAddBtn");
-const akTable = document.getElementById("currAkTable");
-const ctNameInput = document.getElementById("currCtName");
-const ctAddBtn = document.getElementById("currCtAddBtn");
-const ctTable = document.getElementById("currCtTable");
+const akNameInput = () => $id("currAkName");
+const akShortInput = () => $id("currAkShort");
+const akAddBtn = () => $id("currAkAddBtn");
+const akTable = () => $id("currAkTable");
+const ctNameInput = () => $id("currCtName");
+const ctAddBtn = () => $id("currCtAddBtn");
+const ctTable = () => $id("currCtTable");
 
 // Дисциплины плана
-const newDiscNameInput = document.getElementById("currNewDiscName");
-const newDiscDeptSelect = document.getElementById("currNewDiscDept");
-const newDiscAddBtn = document.getElementById("currNewDiscAddBtn");
-const discTable = document.getElementById("currDiscTable");
+const newDiscNameInput = () => $id("currNewDiscName");
+const newDiscDeptSelect = () => $id("currNewDiscDept");
+const newDiscAddBtn = () => $id("currNewDiscAddBtn");
+const discTable = () => $id("currDiscTable");
 
 // Форма карточки
-const cardForm = document.getElementById("currCardForm");
-const cardFormTitle = document.getElementById("currCardFormTitle");
-const cardCancelBtn = document.getElementById("currCardCancelBtn");
-const saveCardBtn = document.getElementById("currSaveCardBtn");
-const cardDisciplineSelect = document.getElementById("currCardDiscipline");
-const cardCourseSelect = document.getElementById("currCardCourse");
-const cardTermSelect = document.getElementById("currCardTerm");
-const cardTotalInput = document.getElementById("currCardTotal");
-const cardCommentInput = document.getElementById("currCardComment");
-const hoursTable = document.getElementById("currHoursTable");
-const addHourRowBtn = document.getElementById("currAddHourRowBtn");
-const controlsWrap = document.getElementById("currControlsWrap");
+const cardForm = () => $id("currCardForm");
+const cardFormTitle = () => $id("currCardFormTitle");
+const cardCancelBtn = () => $id("currCardCancelBtn");
+const saveCardBtn = () => $id("currSaveCardBtn");
+const cardDisciplineSelect = () => $id("currCardDiscipline");
+const cardCourseSelect = () => $id("currCardCourse");
+const cardTermSelect = () => $id("currCardTerm");
+const cardTotalInput = () => $id("currCardTotal");
+const cardCommentInput = () => $id("currCardComment");
+const hoursTable = () => $id("currHoursTable");
+const addHourRowBtn = () => $id("currAddHourRowBtn");
+const controlsWrap = () => $id("currControlsWrap");
 
 let isBound = false;
 let activeTab = "cards";
@@ -109,7 +115,7 @@ function fmtH(v) {
 }
 
 function setStatus(msg) {
-  if (statusEl) statusEl.textContent = msg || "";
+  if (statusEl()) statusEl().textContent = msg || "";
 }
 
 async function guard(fn) {
@@ -125,22 +131,22 @@ async function guard(fn) {
 // ------------------------------------------------------------------ вкладки
 
 function renderTabs() {
-  if (!tabsWrap) return;
-  tabsWrap.innerHTML = TABS.map(
+  if (!tabsWrap()) return;
+  tabsWrap().innerHTML = TABS.map(
     (t) =>
       `<button class="dict-tab${t.key === activeTab ? " active" : ""}"` +
       ` data-curr-tab="${t.key}" type="button">${esc(t.title)}</button>`
   ).join("");
-  for (const [key, pane] of Object.entries(panes)) {
+  for (const [key, pane] of Object.entries(panes())) {
     pane?.classList.toggle("hidden", key !== activeTab);
   }
   // Кнопка сохранения карточки видна только на вкладке карточек с открытой формой
-  cardForm?.classList.toggle("hidden", activeTab !== "cards" || !isFormOpen());
-  saveCardBtn?.classList.toggle("hidden", activeTab !== "cards" || !isFormOpen());
+  cardForm()?.classList.toggle("hidden", activeTab !== "cards" || !isFormOpen());
+  saveCardBtn()?.classList.toggle("hidden", activeTab !== "cards" || !isFormOpen());
 }
 
 function isFormOpen() {
-  return Boolean(cardForm && !cardForm.classList.contains("hidden"));
+  return Boolean(cardForm() && !cardForm().classList.contains("hidden"));
 }
 
 // --------------------------------------------------------------------- meta
@@ -157,37 +163,37 @@ function fillStaticSelects() {
   if (!meta) return;
 
   // Фильтры: курсы 1..4, семестры 1..8, кафедры
-  if (filterCourse && filterCourse.options.length <= 1) {
+  if (filterCourse() && filterCourse().options.length <= 1) {
     for (let c = 1; c <= 4; c++) {
-      filterCourse.insertAdjacentHTML(
+      filterCourse().insertAdjacentHTML(
         "beforeend",
         `<option value="${c}">Курс ${c}</option>`
       );
     }
   }
-  if (filterTerm && filterTerm.options.length <= 1) {
+  if (filterTerm() && filterTerm().options.length <= 1) {
     for (let t = 1; t <= 8; t++) {
-      filterTerm.insertAdjacentHTML(
+      filterTerm().insertAdjacentHTML(
         "beforeend",
         `<option value="${t}">Семестр ${t}</option>`
       );
     }
   }
-  if (filterDept && filterDept.dataset.filled !== "1") {
-    filterDept.innerHTML =
+  if (filterDept() && filterDept().dataset.filled !== "1") {
+    filterDept().innerHTML =
       `<option value="">Все кафедры</option>` +
       meta.departments
         .map((d) => `<option value="${d.id}">${esc(d.name)}</option>`)
         .join("");
-    filterDept.dataset.filled = "1";
+    filterDept().dataset.filled = "1";
   }
-  if (newDiscDeptSelect && newDiscDeptSelect.dataset.filled !== "1") {
-    newDiscDeptSelect.innerHTML =
+  if (newDiscDeptSelect() && newDiscDeptSelect().dataset.filled !== "1") {
+    newDiscDeptSelect().innerHTML =
       `<option value="">Без кафедры</option>` +
       meta.departments
         .map((d) => `<option value="${d.id}">${esc(d.name)}</option>`)
         .join("");
-    newDiscDeptSelect.dataset.filled = "1";
+    newDiscDeptSelect().dataset.filled = "1";
   }
 }
 
@@ -196,16 +202,16 @@ function fillStaticSelects() {
 async function reloadCards() {
   if (!meta) return;
   cardsCache = await api.currCards({
-    course: filterCourse?.value || "",
-    term: filterTerm?.value || "",
-    departmentId: filterDept?.value || "",
-    search: searchInput?.value.trim() || "",
+    course: filterCourse()?.value || "",
+    term: filterTerm()?.value || "",
+    departmentId: filterDept()?.value || "",
+    search: searchInput()?.value.trim() || "",
   });
   renderCardsTable();
 }
 
 function renderCardsTable() {
-  if (!cardsTable) return;
+  if (!cardsTable()) return;
   const head = `<tr>
     <th>Дисциплина</th><th>Кафедра</th><th>Курс</th><th>Сем.</th>
     <th>Трудоемкость</th><th>Часы по видам деятельности</th>
@@ -231,7 +237,7 @@ function renderCardsTable() {
       </td>
     </tr>`;
   });
-  cardsTable.innerHTML =
+  cardsTable().innerHTML =
     head +
     (rows.length
       ? rows.join("")
@@ -245,7 +251,7 @@ async function openCardForm(cardId) {
   editingCardId = cardId || null;
 
   // Дисциплины для выбора (из мета; metaId = id discipline_meta)
-  cardDisciplineSelect.innerHTML =
+  cardDisciplineSelect().innerHTML =
     `<option value="">— выбери дисциплину —</option>` +
     meta.disciplines
       .map(
@@ -257,10 +263,10 @@ async function openCardForm(cardId) {
       )
       .join("");
 
-  cardCourseSelect.innerHTML = [1, 2, 3, 4]
+  cardCourseSelect().innerHTML = [1, 2, 3, 4]
     .map((c) => `<option value="${c}">Курс ${c}</option>`)
     .join("");
-  cardTermSelect.innerHTML = Array.from({ length: 8 }, (_, i) => i + 1)
+  cardTermSelect().innerHTML = Array.from({ length: 8 }, (_, i) => i + 1)
     .map((t) => `<option value="${t}">Семестр ${t}</option>`)
     .join("");
 
@@ -270,20 +276,20 @@ async function openCardForm(cardId) {
     if (!card) return;
   }
 
-  cardFormTitle.textContent = card
+  cardFormTitle().textContent = card
     ? `Карточка плана: ${card.disciplineName}`
     : "Новая дисциплина в плане";
-  cardDisciplineSelect.value = card
+  cardDisciplineSelect().value = card
     ? String(
         meta.disciplines.find((d) => d.metaId === card.disciplineMetaId)?.metaId ??
           card.disciplineMetaId ??
           ""
       )
     : "";
-  cardCourseSelect.value = String(card?.course ?? 1);
-  cardTermSelect.value = String(card?.term ?? 1);
-  cardTotalInput.value = card?.totalHours ?? "";
-  cardCommentInput.value = card?.comment ?? "";
+  cardCourseSelect().value = String(card?.course ?? 1);
+  cardTermSelect().value = String(card?.term ?? 1);
+  cardTotalInput().value = card?.totalHours ?? "";
+  cardCommentInput().value = card?.comment ?? "";
 
   hourRows = card
     ? (card.hours || []).map((h) => ({ ...h }))
@@ -296,21 +302,21 @@ async function openCardForm(cardId) {
   }
   renderControls();
 
-  cardForm.classList.remove("hidden");
-  saveCardBtn.classList.remove("hidden");
+  cardForm().classList.remove("hidden");
+  saveCardBtn().classList.remove("hidden");
   setStatus(card ? "Редактирование карточки." : "Новая карточка плана.");
-  cardForm.scrollIntoView({ behavior: "smooth", block: "start" });
+  cardForm().scrollIntoView({ behavior: "smooth", block: "start" });
 }
 
 function closeCardForm() {
-  cardForm?.classList.add("hidden");
-  saveCardBtn?.classList.add("hidden");
+  cardForm()?.classList.add("hidden");
+  saveCardBtn()?.classList.add("hidden");
   editingCardId = null;
 }
 
 // Таблица часов: группа × вид деятельности × часы
 function renderHoursTable() {
-  if (!hoursTable) return;
+  if (!hoursTable()) return;
   const groupOptions = (selected) =>
     `<option value=""${!selected ? " selected" : ""}>Все группы</option>` +
     meta.groups
@@ -330,7 +336,7 @@ function renderHoursTable() {
       )
       .join("");
 
-  hoursTable.innerHTML =
+  hoursTable().innerHTML =
     `<tr><th>Группа</th><th>Вид деятельности</th><th>Часы</th><th></th></tr>` +
     hourRows
       .map(
@@ -348,8 +354,8 @@ function renderHoursTable() {
 
 // Блоки видов контроля: чекбоксы семестров 1..8
 function renderControls() {
-  if (!controlsWrap) return;
-  controlsWrap.innerHTML = meta.controlTypes
+  if (!controlsWrap()) return;
+  controlsWrap().innerHTML = meta.controlTypes
     .map((ct) => {
       const set = controlState[ct.id] || new Set();
       const boxes = Array.from({ length: 8 }, (_, i) => i + 1)
@@ -367,15 +373,15 @@ function renderControls() {
 
 async function saveCard() {
   await guard(async () => {
-    const metaId = Number(cardDisciplineSelect.value);
+    const metaId = Number(cardDisciplineSelect().value);
     if (!metaId) throw new Error("Выберите дисциплину (во вкладке «Дисциплины» она должна быть привязана к кафедре)");
     const payload = {
       id: editingCardId || 0,
       disciplineMetaId: metaId,
-      course: Number(cardCourseSelect.value) || 1,
-      term: Number(cardTermSelect.value) || 1,
-      totalHours: Number(cardTotalInput.value) || 0,
-      comment: cardCommentInput.value.trim(),
+      course: Number(cardCourseSelect().value) || 1,
+      term: Number(cardTermSelect().value) || 1,
+      totalHours: Number(cardTotalInput().value) || 0,
+      comment: cardCommentInput().value.trim(),
       hours: hourRows
         .filter((r) => Number(r.activityKindId) > 0)
         .map((r) => ({
@@ -401,7 +407,7 @@ async function saveCard() {
 
 async function reloadDepartments() {
   if (!meta) return;
-  depTable.innerHTML =
+  depTable().innerHTML =
     `<tr><th>Название</th><th>Кратко</th><th></th></tr>` +
     meta.departments
       .map(
@@ -420,7 +426,7 @@ async function reloadDepartments() {
 
 async function reloadKinds() {
   if (!meta) return;
-  akTable.innerHTML =
+  akTable().innerHTML =
     `<tr><th>Название</th><th>Кратко</th><th></th></tr>` +
     meta.activityKinds
       .map(
@@ -434,7 +440,7 @@ async function reloadKinds() {
       )
       .join("");
 
-  ctTable.innerHTML =
+  ctTable().innerHTML =
     `<tr><th>Название</th><th></th></tr>` +
     meta.controlTypes
       .map(
@@ -458,7 +464,7 @@ async function reloadDisciplines() {
       .map((d) => `<option value="${d.id}"${Number(sel) === d.id ? " selected" : ""}>${esc(d.name)}</option>`)
       .join("");
 
-  discTable.innerHTML =
+  discTable().innerHTML =
     `<tr><th>Дисциплина</th><th>Кафедра</th><th></th></tr>` +
     meta.disciplines
       .map(
@@ -476,11 +482,25 @@ async function reloadDisciplines() {
 // -------------------------------------------------------------------- bind
 
 function bindOnce() {
-  if (isBound || !openBtn || !overlay) return;
+  if (isBound) return;
+  // Привязку делаем, даже если окно ещё не в DOM: обработчик кнопки ищет
+  // элементы ЛЕНИВО в момент клика. Повторная привязка не нужна — ставим
+  // флаг сразу.
   isBound = true;
 
-  openBtn.addEventListener("click", async () => {
-    overlay.classList.remove("hidden");
+  const btn = openBtn();
+  if (!btn) {
+    console.error("curriculumModal: кнопка #currBtn не найдена в index.html");
+    return;
+  }
+
+  btn.addEventListener("click", async () => {
+    const ov = overlay();
+    if (!ov) {
+      alert("Не найдено окно учебного плана (#currOverlay) в index.html.");
+      return;
+    }
+    ov.classList.remove("hidden");
     setStatus("Загрузка учебного плана...");
     await guard(async () => {
       await loadMeta(true);
@@ -496,18 +516,20 @@ function bindOnce() {
   });
 
   const close = () => {
-    overlay.classList.add("hidden");
+    const ov = overlay();
+    if (ov) ov.classList.add("hidden");
     closeCardForm();
   };
-  closeBtn?.addEventListener("click", close);
-  overlay.addEventListener("mousedown", (e) => {
-    if (e.target === overlay) close();
+  closeBtn()?.addEventListener("click", close);
+  overlay()?.addEventListener("mousedown", (e) => {
+    if (e.target === overlay()) close();
   });
   document.addEventListener("keydown", (e) => {
-    if (e.key === "Escape" && !overlay.classList.contains("hidden")) close();
+    const ov = overlay();
+    if (e.key === "Escape" && ov && !ov.classList.contains("hidden")) close();
   });
 
-  tabsWrap?.addEventListener("click", (e) => {
+  tabsWrap()?.addEventListener("click", (e) => {
     const btn = e.target.closest("[data-curr-tab]");
     if (!btn) return;
     activeTab = btn.dataset.currTab;
@@ -515,17 +537,17 @@ function bindOnce() {
   });
 
   // ---- карточки: фильтры, кнопки, форма
-  for (const el of [filterCourse, filterTerm, filterDept]) {
-    el?.addEventListener("change", () => guard(reloadCards));
+  for (const el of [filterCourse(), filterTerm(), filterDept()]) {
+    el?.addEventListener("change", () => guard(() => reloadCards()));
   }
   let searchTimer = null;
-  searchInput?.addEventListener("input", () => {
+  searchInput()?.addEventListener("input", () => {
     clearTimeout(searchTimer);
-    searchTimer = setTimeout(() => guard(reloadCards), 300);
+    searchTimer = setTimeout(() => guard(() => reloadCards()), 300);
   });
-  addCardBtn?.addEventListener("click", () => guard(() => openCardForm(null)));
+  addCardBtn()?.addEventListener("click", () => guard(() => openCardForm(null)));
 
-  cardsTable?.addEventListener("click", (e) => {
+  cardsTable()?.addEventListener("click", (e) => {
     const edit = e.target.closest("[data-edit-card]");
     if (edit) return guard(() => openCardForm(Number(edit.dataset.editCard)));
     const del = e.target.closest("[data-del-card]");
@@ -540,11 +562,11 @@ function bindOnce() {
     }
   });
 
-  cardCancelBtn?.addEventListener("click", closeCardForm);
-  saveCardBtn?.addEventListener("click", () => guard(saveCard));
+  cardCancelBtn()?.addEventListener("click", closeCardForm);
+  saveCardBtn()?.addEventListener("click", () => guard(() => saveCard()));
 
   // редактор часов
-  addHourRowBtn?.addEventListener("click", () => {
+  addHourRowBtn()?.addEventListener("click", () => {
     hourRows.push({
       groupId: null,
       activityKindId: meta?.activityKinds[0]?.id ?? "",
@@ -553,7 +575,7 @@ function bindOnce() {
     renderHoursTable();
   });
 
-  hoursTable?.addEventListener("input", (e) => {
+  hoursTable()?.addEventListener("input", (e) => {
     const tr = e.target.closest("[data-hour-row]");
     if (!tr) return;
     const idx = Number(tr.dataset.hourRow);
@@ -568,7 +590,7 @@ function bindOnce() {
     setStatus("Есть несохранённые изменения в часах.");
   });
 
-  hoursTable?.addEventListener("click", (e) => {
+  hoursTable()?.addEventListener("click", (e) => {
     const del = e.target.closest("[data-del-hour]");
     if (!del) return;
     hourRows.splice(Number(del.dataset.delHour), 1);
@@ -576,7 +598,7 @@ function bindOnce() {
   });
 
   // редактор контроля
-  controlsWrap?.addEventListener("change", (e) => {
+  controlsWrap()?.addEventListener("change", (e) => {
     const cb = e.target.closest("[data-ctrl-type]");
     if (!cb) return;
     const ctId = Number(cb.dataset.ctrlType);
@@ -588,25 +610,25 @@ function bindOnce() {
   });
 
   // ---- кафедры
-  depAddBtn?.addEventListener("click", () =>
+  depAddBtn()?.addEventListener("click", () =>
     guard(async () => {
-      const name = depNameInput.value.trim();
+      const name = depNameInput().value.trim();
       if (!name) throw new Error("Укажите название кафедры");
-      await api.saveCurrDepartment({ name, short_name: depShortInput.value.trim() });
-      depNameInput.value = "";
-      depShortInput.value = "";
+      await api.saveCurrDepartment({ name, short_name: depShortInput().value.trim() });
+      depNameInput().value = "";
+      depShortInput().value = "";
       await Promise.all([loadMeta(true), reloadDepartments(), reloadCards()]);
       fillStaticSelects();
       setStatus("Кафедра добавлена.");
     })
   );
 
-  depTable?.addEventListener("click", (e) => {
+  depTable()?.addEventListener("click", (e) => {
     const save = e.target.closest("[data-save-dep]");
     if (save) {
       const id = Number(save.dataset.saveDep);
-      const name = depTable.querySelector(`[data-dep-field="name"][data-dep-id="${id}"]`)?.value.trim();
-      const shortName = depTable.querySelector(`[data-dep-field="shortName"][data-dep-id="${id}"]`)?.value.trim();
+      const name = depTable().querySelector(`[data-dep-field="name"][data-dep-id="${id}"]`)?.value.trim();
+      const shortName = depTable().querySelector(`[data-dep-field="shortName"][data-dep-id="${id}"]`)?.value.trim();
       if (!name) return alert("Название не может быть пустым");
       return guard(async () => {
         await api.saveCurrDepartment({ id, name, short_name: shortName });
@@ -627,24 +649,24 @@ function bindOnce() {
   });
 
   // ---- виды деятельности
-  akAddBtn?.addEventListener("click", () =>
+  akAddBtn()?.addEventListener("click", () =>
     guard(async () => {
-      const name = akNameInput.value.trim();
+      const name = akNameInput().value.trim();
       if (!name) throw new Error("Укажите название вида деятельности");
-      await api.saveCurrActivityKind({ name, short_name: akShortInput.value.trim() });
-      akNameInput.value = "";
-      akShortInput.value = "";
+      await api.saveCurrActivityKind({ name, short_name: akShortInput().value.trim() });
+      akNameInput().value = "";
+      akShortInput().value = "";
       await Promise.all([loadMeta(true), reloadKinds()]);
       setStatus("Вид деятельности добавлен.");
     })
   );
 
-  akTable?.addEventListener("click", (e) => {
+  akTable()?.addEventListener("click", (e) => {
     const save = e.target.closest("[data-save-ak]");
     if (save) {
       const id = Number(save.dataset.saveAk);
-      const name = akTable.querySelector(`[data-ak-field="name"][data-ak-id="${id}"]`)?.value.trim();
-      const shortName = akTable.querySelector(`[data-ak-field="shortName"][data-ak-id="${id}"]`)?.value.trim();
+      const name = akTable().querySelector(`[data-ak-field="name"][data-ak-id="${id}"]`)?.value.trim();
+      const shortName = akTable().querySelector(`[data-ak-field="shortName"][data-ak-id="${id}"]`)?.value.trim();
       if (!name) return alert("Название не может быть пустым");
       return guard(async () => {
         await api.saveCurrActivityKind({ id, name, short_name: shortName });
@@ -664,22 +686,22 @@ function bindOnce() {
   });
 
   // ---- виды контроля
-  ctAddBtn?.addEventListener("click", () =>
+  ctAddBtn()?.addEventListener("click", () =>
     guard(async () => {
-      const name = ctNameInput.value.trim();
+      const name = ctNameInput().value.trim();
       if (!name) throw new Error("Укажите название вида контроля");
       await api.saveCurrControlType({ name });
-      ctNameInput.value = "";
+      ctNameInput().value = "";
       await Promise.all([loadMeta(true), reloadKinds()]);
       setStatus("Вид контроля добавлен.");
     })
   );
 
-  ctTable?.addEventListener("click", (e) => {
+  ctTable()?.addEventListener("click", (e) => {
     const save = e.target.closest("[data-save-ct]");
     if (save) {
       const id = Number(save.dataset.saveCt);
-      const name = ctTable.querySelector(`[data-ct-field="name"][data-ct-id="${id}"]`)?.value.trim();
+      const name = ctTable().querySelector(`[data-ct-field="name"][data-ct-id="${id}"]`)?.value.trim();
       if (!name) return alert("Название не может быть пустым");
       return guard(async () => {
         await api.saveCurrControlType({ id, name });
@@ -699,26 +721,26 @@ function bindOnce() {
   });
 
   // ---- дисциплины плана
-  newDiscAddBtn?.addEventListener("click", () =>
+  newDiscAddBtn()?.addEventListener("click", () =>
     guard(async () => {
-      const name = newDiscNameInput.value.trim();
+      const name = newDiscNameInput().value.trim();
       if (!name) throw new Error("Укажите название дисциплины");
       await api.saveCurrDiscipline({
         name,
-        departmentId: Number(newDiscDeptSelect.value) || 0,
+        departmentId: Number(newDiscDeptSelect().value) || 0,
       });
-      newDiscNameInput.value = "";
+      newDiscNameInput().value = "";
       await Promise.all([loadMeta(true), reloadDisciplines()]);
       setStatus("Дисциплина добавлена в план.");
     })
   );
 
-  discTable?.addEventListener("click", (e) => {
+  discTable()?.addEventListener("click", (e) => {
     const save = e.target.closest("[data-save-disc]");
     if (save) {
       const disciplineId = Number(save.dataset.saveDisc);
       const metaId = Number(save.dataset.metaId) || 0;
-      const sel = discTable.querySelector(`[data-disc-dept="${disciplineId}"]`);
+      const sel = discTable().querySelector(`[data-disc-dept="${disciplineId}"]`);
       const departmentId = Number(sel?.value) || 0;
       return guard(async () => {
         await api.saveCurrDiscipline({
