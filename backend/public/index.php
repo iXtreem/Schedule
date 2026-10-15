@@ -145,9 +145,13 @@ try {
     case 'curr_card':
     case 'curr_violations':
     // Справочники «Виды деятельности» / «Виды контроля» (окно «Справочники»)
+    // dict_* — те же эндпоинты под «словарным» именем, чтобы окно
+    // «Справочники» работало через привычный api.dictList/dictCreate/dictDelete.
     case 'curr_lesson_types':
     case 'curr_activity_kinds':
     case 'curr_control_types':
+    case 'dict_activity_kinds':
+    case 'dict_control_types':
         require_once __DIR__ . '/../modules/curriculum/curriculum.controller.php';
         curriculumController($method, $entity);
     break;

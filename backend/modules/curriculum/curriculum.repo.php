@@ -527,6 +527,47 @@ function repoCurrKindLessonTypeMap(mysqli $planConn): array {
   return $map;
 }
 
+/* Есть ли в учебном плане ХОТЬ ОДНА связь вида деятельности с типом занятия.
+ * Если да — сопоставление считается СТРОГИМ: вид соответствует типу только
+ * по явной связи lesson_type_id (справочники и план синхронизированы).
+ * Если связей нет вообще (старая база) — работает прежнее сопоставление
+ * по нормализованному имени («Лекции»~«Лекция»).
+ * Кэш живёт в $GLOBALS и сбрасывается после каждого CRUD вида деятельности,
+ * чтобы под mod_php переиспользование процесса не устаревало. */
+function repoCurrHasAnyKindLink(?mysqli $planConn): bool {
+  if ($planConn === null) return false; // соединения нет — не ужесточаем поведение
+  if (isset($GLOBALS['__curr_haslink'])) return (bool)$GLOBALS['__curr_haslink'];
+  $t = planTab('activity_kind');
+  $v = dbScalar($planConn,
+    "SELECT 1 FROM {$t} WHERE is_deleted = 0 AND lesson_type_id IS NOT NULL AND lesson_type_id > 0 LIMIT 1",
+    [], 0);
+  return $GLOBALS['__curr_haslink'] = ((int)$v === 1);
+}
+
+/* Сброс кэша проверки связей — вызывать после CRUD вида деятельности. */
+function repoCurrKindLinkCacheReset(): void {
+  unset($GLOBALS['__curr_haslink']);
+}
+
+/*
+ * Автосинхронизация связей «вид деятельности <-> тип занятия» по имени.
+ * Вызывается после сохранения вида: если связь не указана явно, пробуем
+ * найти тип занятия основной БД с похожим названием и проставить его —
+ * так справочник и учебный план всегда остаются идентичными.
+ */
+function repoCurrAutoLinkLessonType(mysqli $planConn, int $kindId, string $name, ?string $shortName): void {
+  if ($kindId <= 0) return;
+  $mp = currMainPrefix();
+  $types = dbAll($planConn, "SELECT id, name FROM {$mp}lesson_type WHERE is_deleted = 0");
+  foreach ($types as $ty) {
+    if (currKindMatchesLessonType($name, (string)($shortName ?? ''), (string)$ty['name'])) {
+      $t = planTab('activity_kind');
+      dbExec($planConn, "UPDATE {$t} SET lesson_type_id = ? WHERE id = ?", [(int)$ty['id'], $kindId]);
+      return;
+    }
+  }
+}
+
 // Вид контроля по группе/семестру (для отображения «Экзамен/Зачет» в модалке)
 function repoCurrGroupTermControls(mysqli $conn, int $groupId, int $term): array {
   $curr = planTab('curriculum');
@@ -582,23 +623,34 @@ function currKindMatchesLessonType(string $kindName, string $shortName, string $
 }
 
 /*
- * Сопоставление вида деятельности строки часовой сетки с типом занятия:
- * сначала ЯВНАЯ связь из учебного плана (activity_kind.lesson_type_id),
- * затем — прежнее сопоставление по имени/сокращению («Лекции»~«Лекция»).
+ * Сопоставление вида деятельности строки часовой сетки с типом занятия.
+ * ЕСЛИ в плане задана хотя бы одна явная связь (activity_kind.lesson_type_id),
+ * режим СТРОГИЙ: совпадение только по lesson_type_id — справочник «Типы
+ * занятий» и учебный план полностью синхронизированы. Иначе (старая база
+ * без связей) — прежнее сопоставление по нормализованному имени/сокращению.
  */
 function currRowMatchesLessonType(array $row, int $lessonTypeId, ?string $typeName, array $kindLtMap): bool {
   $kindId = (int)($row['activity_kind_id'] ?? 0);
-  if ($kindId > 0 && isset($kindLtMap[$kindId]) && $kindLtMap[$kindId] === $lessonTypeId) {
-    return true;
+  if ($kindId > 0 && isset($kindLtMap[$kindId])) {
+    // Явная связь задана — доверяем только ей
+    return $kindLtMap[$kindId] === $lessonTypeId;
   }
-  // Явная связь задана, но не совпала — fallback по имени всё равно пробуем
-  // (один вид может быть привязан к типу и называться похоже).
+  // Связь не задана: строгий режим (есть другие связи) -> не совпало;
+  // старый режим (связей нет вообще) -> fallback по имени.
+  $strict = repoCurrHasAnyKindLink(currPlanConnForMatch());
+  if ($strict) return false;
   if ($typeName === null || $typeName === '') return false;
   return currKindMatchesLessonType(
     (string)($row['kind_name'] ?? ''),
     (string)($row['short_name'] ?? ''),
     (string)$typeName
   );
+}
+
+/* Глобальное соединение с базой плана (задаётся контроллером на запрос),
+ * нужно для проверки наличия связей внутри currRowMatchesLessonType(). */
+function currPlanConnForMatch(): ?mysqli {
+  return $GLOBALS['__curr_plan_conn'] ?? null;
 }
 
 /*
@@ -853,15 +905,18 @@ function repoCurrWeekViolations(mysqli $planConn, mysqli $mainConn, array $weekI
   }
 
   // Плановые часы типа занятия = сумма видов деятельности, сопоставимых с ним.
-  // Сначала — ЯВНАЯ связь из учебного плана (activity_kind.lesson_type_id),
-  // затем fallback по нормализованному имени/сокращению вида.
-  $plannedForType = static function (array $kinds, int $typeId, string $typeName) {
+  // СТРОГИЙ режим (в плане есть хотя бы одна связь lesson_type_id): совпадение
+  // только по явной связи — справочник и учебный план синхронизированы.
+  // Старый режим (связей нет): fallback по нормализованному имени/сокращению.
+  $strictLinks = repoCurrHasAnyKindLink($planConn);
+  $plannedForType = static function (array $kinds, int $typeId, string $typeName) use ($strictLinks) {
     $sum = 0.0;
     foreach ($kinds as $kind) {
       if ((int)($kind['ltid'] ?? 0) === $typeId && $typeId > 0) {
         $sum += (float)$kind['hours'];
         continue;
       }
+      if ($strictLinks) continue; // вид привязан к другому типу — не считаем
       if ($typeName !== '' && currKindMatchesLessonType(
           (string)($kind['name'] ?? ''), (string)($kind['short'] ?? ''), $typeName)) {
         $sum += (float)$kind['hours'];
