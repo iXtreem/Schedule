@@ -128,6 +128,20 @@ try {
         roomPrefsController($conn, $method, $entity);
     break;
 
+    // ---- Окно «📚 Учебный план» (отдельная база uchetlfpstu_plan) ----
+    case 'curriculum_meta':
+    case 'curriculum_department':
+    case 'curriculum_activity':
+    case 'curriculum_control_type':
+    case 'curriculum_discipline':
+    case 'curriculum_list':
+    case 'curriculum_card':
+    case 'curriculum_grid':
+    case 'curriculum_controls':
+        require_once __DIR__ . '/../modules/curriculum/curriculum.controller.php';
+        curriculumController($method, $entity);
+    break;
+
     default:
       errorJson('Неизвестная сущность', 404);
   }
