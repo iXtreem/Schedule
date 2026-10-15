@@ -144,6 +144,10 @@ try {
     case 'curr_cards':
     case 'curr_card':
     case 'curr_violations':
+    // Справочники «Виды деятельности» / «Виды контроля» (окно «Справочники»)
+    case 'curr_lesson_types':
+    case 'curr_activity_kinds':
+    case 'curr_control_types':
         require_once __DIR__ . '/../modules/curriculum/curriculum.controller.php';
         curriculumController($method, $entity);
     break;

@@ -411,6 +411,49 @@ function curriculumController($method, $entity) {
         errorJson('Method not allowed', 405);
       }
 
+      // Справочник «Виды деятельности» в окне «Справочники»: GET отдаёт
+      // список с camelCase-полями (включая lessonTypeId — связь с типом
+      // занятия основной БД), POST принимает как snake_case, так и
+      // camelCase (name/shortName/lessonTypeId/sortOrder/id).
+      case 'curr_activity_kinds': {
+        if ($method === 'GET') { sendJson(currUiActivityKinds()); return; }
+        if ($method === 'POST' || $method === 'PUT') {
+          $body = getJsonBody() ?? [];
+          $normalized = [
+            'name'       => (string)($body['name'] ?? ''),
+            'short_name' => (string)($body['short_name'] ?? $body['shortName'] ?? ''),
+            'lesson_type_id' => $body['lesson_type_id'] ?? $body['lessonTypeId'] ?? null,
+            'sort_order' => (int)($body['sort_order'] ?? $body['sortOrder'] ?? 0),
+          ];
+          $id = (int)($body['id'] ?? 0);
+          sendJson(['success' => true, 'id' => repoCurrActivityKindSave($conn, $id ?: null, $normalized)]);
+          return;
+        }
+        if ($method === 'DELETE') {
+          repoCurrActivityKindDelete($conn, (int)getQuery('id', 0));
+          sendJson(['success' => true]);
+          return;
+        }
+        errorJson('Method not allowed', 405);
+      }
+
+      // Справочник «Виды контроля» в окне «Справочники».
+      case 'curr_control_types': {
+        if ($method === 'GET') { sendJson(currUiControlTypes()); return; }
+        if ($method === 'POST' || $method === 'PUT') {
+          $body = getJsonBody() ?? [];
+          $id = (int)($body['id'] ?? 0);
+          sendJson(['success' => true, 'id' => repoCurrControlTypeSave($conn, $id ?: null, $body)]);
+          return;
+        }
+        if ($method === 'DELETE') {
+          repoCurrControlTypeDelete($conn, (int)getQuery('id', 0));
+          sendJson(['success' => true]);
+          return;
+        }
+        errorJson('Method not allowed', 405);
+      }
+
       case 'curriculum_control_type': {
         if ($method === 'GET') { sendJson(repoCurrControlTypes($conn)); return; }
         if ($method === 'POST' || $method === 'PUT') {

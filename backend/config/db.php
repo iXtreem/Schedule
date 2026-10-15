@@ -104,6 +104,7 @@ function planDB(mysqli $conn): mysqli {
     planSetMode('prefix');
     if (!$schemaDone) {
       planCreateSchema($conn, 'plan_');
+      planMigrateActivityKind($conn, 'plan_');
       planFillDefaults($conn, 'plan_');
       $schemaDone = true;
     }
@@ -126,10 +127,78 @@ function planDB(mysqli $conn): mysqli {
   planSetMode('separate');
   if (!$schemaDone) {
     planCreateSchema($planConn, '');
+    planMigrateActivityKind($planConn, '');
     planFillDefaults($planConn, '');
     $schemaDone = true;
   }
   return $planConn;
+}
+
+// Идемпотентная миграция таблицы activity_kind для СУЩЕСТВУЮЩИХ баз:
+// старые версии схемы не содержат колонку lesson_type_id (связь вида
+// учебной деятельности с типом занятия основной БД). CREATE TABLE IF NOT
+// EXISTS такую таблицу не обновляет — поэтому колонка добавляется через
+// ALTER, а затем существующие связи заполняются по совпадению имён.
+function planMigrateActivityKind(mysqli $conn, string $prefix) {
+  $p = $prefix;
+  if (!dbTableExists($conn, $p . 'activity_kind')) return; // создастся целиком
+
+  if (!dbColumnExists($conn, $p . 'activity_kind', 'lesson_type_id')) {
+    $conn->query(
+      "ALTER TABLE {$p}activity_kind
+         ADD COLUMN lesson_type_id INT NULL AFTER short_name,
+         ADD KEY idx_ak_lesson_type (lesson_type_id)"
+    );
+  }
+
+  // Автозаполнение связей «вид деятельности -> тип занятия» по имени/
+  // сокращению (работает только если основная база доступна на этом же
+  // сервере; ошибки молча пропускаются — сопоставление по имени остаётся
+  // запасным механизмом в репозитории).
+  try {
+    $main = new mysqli($GLOBALS['serverName'], $GLOBALS['username'], $GLOBALS['password'], $GLOBALS['database']);
+    if ($main->connect_errno) throw new Exception($main->connect_error);
+    $main->set_charset('utf8mb4');
+    $types = [];
+    $res = $main->query("SELECT id, name, short_name FROM lesson_type WHERE is_deleted = 0");
+    if ($res) {
+      while ($t = $res->fetch_assoc()) {
+        $types[] = ['id' => (int)$t['id'], 'name' => mb_strtolower(trim((string)$t['name'])),
+                    'short' => mb_strtolower(trim((string)($t['short_name'] ?? '')))];
+      }
+    }
+    $main->close();
+    if (!$types) return;
+
+    $akRes = $conn->query("SELECT id, name, short_name FROM {$p}activity_kind WHERE lesson_type_id IS NULL AND is_deleted = 0");
+    if (!$akRes) return;
+    $kinds = [];
+    while ($k = $akRes->fetch_assoc()) $kinds[] = $k;
+    $akRes->free();
+
+    foreach ($kinds as $k) {
+      $kn = mb_strtolower(trim((string)$k['name']));
+      $ks = mb_strtolower(trim((string)($k['short_name'] ?? '')));
+      $matchId = null;
+      foreach ($types as $t) {
+        if ($kn === $t['name'] || $ks === $t['short'] ||
+            ($t['short'] !== '' && str_starts_with($ks, $t['short'])) ||
+            ($kn !== '' && str_contains($t['name'], $kn)) ||
+            ($t['name'] !== '' && str_contains($kn, $t['name']))) {
+          $matchId = $t['id'];
+          break;
+        }
+      }
+      if ($matchId !== null) {
+        $stmt = $conn->prepare("UPDATE {$p}activity_kind SET lesson_type_id = ? WHERE id = ?");
+        $stmt->bind_param('ii', $matchId, $k['id']);
+        $stmt->execute();
+        $stmt->close();
+      }
+    }
+  } catch (Throwable $e) {
+    error_log('planMigrateActivityKind: ' . $e->getMessage());
+  }
 }
 
 function planSetMode(string $m) {
