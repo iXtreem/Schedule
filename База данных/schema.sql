@@ -202,3 +202,137 @@ CREATE TABLE IF NOT EXISTS bell_schedule (
   time_text VARCHAR(200) NOT NULL,             -- текст времени («8:00-8:45<br>...»)
   UNIQUE KEY uq_bell (day_type, slot_num)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+-- ============================================================================
+-- УЧЕБНЫЙ ПЛАН (окно «📚 Учебный план», модуль backend/modules/curriculum)
+-- ----------------------------------------------------------------------------
+-- Отдельная «база учебного плана»: схема uchetlfpstu_plan на том же MySQL-сервере.
+-- Если сервер не разрешает создавать вторую базу (общий хостинг), таблицы
+-- автоматически создаются в основной базе с префиксом plan_ (авто-выбор в
+-- backend/config/db.php — функция planDatabase()).
+--
+-- Смысл таблиц:
+--   department          — кафедра;
+--   discipline_meta     — дисциплина + её привязка к кафедре
+--                         (расширяет справочник discipline основной базы);
+--   activity_kind       — виды учебной деятельности (экзамен, лекции,
+--                         лабораторные, практические, КСР/КРВ);
+--   curriculum          — карточка учебного плана: дисциплина + курс + семестр;
+--   curriculum_hours    — распределение общей трудоемкости по видам
+--                         деятельности для КАЖДОЙ ГРУППЫ (в каждом семестре
+--                         каждой группы свои часы);
+--   control_type        — справочник видов контроля (Экзамен, Диф. Зачет,
+--                         Зачет, Курсовой проект, Курсовая работа);
+--   curriculum_control  — вид контроля по семестрам; в одном пункте можно
+--                         указать НЕСКОЛЬКО семестров (несколько строк).
+-- ============================================================================
+
+USE uchetlfpstu_plan;
+
+-- Кафедры --------------------------------------------------------------
+CREATE TABLE IF NOT EXISTS department (
+  id         INT NOT NULL AUTO_INCREMENT PRIMARY KEY,
+  name       VARCHAR(150) NOT NULL,            -- название кафедры
+  short_name VARCHAR(50)  NULL,                -- сокращение
+  is_deleted TINYINT(1)   NOT NULL DEFAULT 0,
+  UNIQUE KEY uq_department_name (name)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+-- Дисциплины учебного плана (с привязкой к кафедре) --------------------
+-- discipline_id ссылается на справочник discipline основной базы
+-- (в режиме «префикс plan_» — просто хранит id без внешнего ключа).
+CREATE TABLE IF NOT EXISTS discipline_meta (
+  id            INT NOT NULL AUTO_INCREMENT PRIMARY KEY,
+  discipline_id INT NULL,                      -- id из справочника дисциплин
+  department_id INT NULL,                      -- кафедра
+  is_deleted    TINYINT(1) NOT NULL DEFAULT 0,
+  UNIQUE KEY uq_discipline_meta (discipline_id),
+  KEY idx_dm_department (department_id)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+-- Виды учебной деятельности (столбцы часов) -----------------------------
+-- Порядок вывода задаётся полем sort_order (экзамен, лекции, лабы, практики, КСР/КРВ).
+CREATE TABLE IF NOT EXISTS activity_kind (
+  id         INT NOT NULL AUTO_INCREMENT PRIMARY KEY,
+  name       VARCHAR(100) NOT NULL,            -- «Лекции», «Лабораторные»...
+  short_name VARCHAR(30)  NULL,                -- «Лек», «Лаб», «КСР»...
+  sort_order INT NOT NULL DEFAULT 0,
+  is_deleted TINYINT(1) NOT NULL DEFAULT 0,
+  UNIQUE KEY uq_activity_name (name)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+-- Карточка учебного плана: дисциплина на курсе/семестре -----------------
+-- term = 1..8 (1-й курс — семестры 1 и 2, ..., 4-й курс — 7 и 8).
+-- Номера семестров 9..12 допускаются для специалитетов.
+CREATE TABLE IF NOT EXISTS curriculum (
+  id               INT NOT NULL AUTO_INCREMENT PRIMARY KEY,
+  discipline_id    INT NOT NULL,               -- ссылка на discipline_meta.id
+  course           INT NOT NULL,               -- курс 1..4
+  term             INT NOT NULL,               -- семестр 1..12
+  total_hours      DECIMAL(8,2) NOT NULL DEFAULT 0, -- общая трудоемкость
+  comment          VARCHAR(500) NULL,
+  is_deleted       TINYINT(1) NOT NULL DEFAULT 0,
+  created_at       DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  updated_at       DATETIME NULL,
+  UNIQUE KEY uq_curriculum (discipline_id, course, term),
+  KEY idx_curr_term (term),
+  CONSTRAINT fk_curr_disc FOREIGN KEY (discipline_id) REFERENCES discipline_meta (id)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+-- Распределение общей трудоемкости по видам учебной деятельности ---------
+-- Часы указываются отдельно для КАЖДОЙ ГРУППЫ в конкретном семестре
+-- (group_id -> student_group.id основной базы; в режиме «префикс» — без FK).
+CREATE TABLE IF NOT EXISTS curriculum_hours (
+  id              INT NOT NULL AUTO_INCREMENT PRIMARY KEY,
+  curriculum_id   INT NOT NULL,
+  group_id        INT NULL,                    -- группа (student_group.id)
+  activity_kind_id INT NOT NULL,               -- вид деятельности
+  hours           DECIMAL(8,2) NOT NULL DEFAULT 0,
+  is_deleted      TINYINT(1) NOT NULL DEFAULT 0,
+  UNIQUE KEY uq_curr_hours (curriculum_id, group_id, activity_kind_id),
+  KEY idx_ch_curr (curriculum_id),
+  CONSTRAINT fk_ch_curr FOREIGN KEY (curriculum_id) REFERENCES curriculum (id),
+  CONSTRAINT fk_ch_kind FOREIGN KEY (activity_kind_id) REFERENCES activity_kind (id)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+-- Справочник видов контроля ---------------------------------------------
+CREATE TABLE IF NOT EXISTS control_type (
+  id         INT NOT NULL AUTO_INCREMENT PRIMARY KEY,
+  name       VARCHAR(100) NOT NULL,            -- «Экзамен», «Диф. Зачет»...
+  sort_order INT NOT NULL DEFAULT 0,
+  is_deleted TINYINT(1) NOT NULL DEFAULT 0,
+  UNIQUE KEY uq_control_name (name)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+-- Вид контроля по семестрам ----------------------------------------------
+-- Одна дисциплина может иметь несколько видов контроля и несколько
+-- семестров у каждого вида (уникальность связки curriculum+control+term).
+CREATE TABLE IF NOT EXISTS curriculum_control (
+  id            INT NOT NULL AUTO_INCREMENT PRIMARY KEY,
+  curriculum_id INT NOT NULL,
+  control_type_id INT NOT NULL,
+  term          INT NOT NULL,                  -- семестр (1..12)
+  is_deleted    TINYINT(1) NOT NULL DEFAULT 0,
+  UNIQUE KEY uq_curr_control (curriculum_id, control_type_id, term),
+  KEY idx_cc_curr (curriculum_id),
+  CONSTRAINT fk_cc_curr FOREIGN KEY (curriculum_id)   REFERENCES curriculum (id),
+  CONSTRAINT fk_cc_type FOREIGN KEY (control_type_id) REFERENCES control_type (id)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+-- Наполнение справочников по умолчанию (идемпотентно) -------------------
+INSERT IGNORE INTO activity_kind (name, short_name, sort_order) VALUES
+ ('Экзамен',              'Экз',  10),
+ ('Лекции',               'Лек',  20),
+ ('Лабораторные работы',  'Лаб',  30),
+ ('Практические занятия', 'Прак', 40),
+ ('КСР/КРВ',              'КСР',  50),
+ ('Курсовой проект',      'КурПр',60),
+ ('Курсовая работа',      'КурРа',70),
+ ('Самостоятельная работа','СР',   80);
+
+INSERT IGNORE INTO control_type (name, sort_order) VALUES
+ ('Экзамен',          10),
+ ('Дифференцированный зачет', 20),
+ ('Зачет',            30),
+ ('Курсовой проект',  40),
+ ('Курсовая работа',  50);
