@@ -77,7 +77,6 @@ const cardDisciplineSelect = () => $id("currCardDiscipline");
 const cardCourseSelect = () => $id("currCardCourse");
 const cardTermSelect = () => $id("currCardTerm");
 const cardTotalInput = () => $id("currCardTotal");
-const cardCommentInput = () => $id("currCardComment");
 const hoursTable = () => $id("currHoursTable");
 const addHourRowBtn = () => $id("currAddHourRowBtn");
 const controlsWrap = () => $id("currControlsWrap");
@@ -307,7 +306,6 @@ async function openCardForm(cardId) {
   cardCourseSelect().value = String(card?.course ?? 1);
   cardTermSelect().value = String(card?.term ?? 1);
   cardTotalInput().value = card?.totalHours ?? "";
-  cardCommentInput().value = card?.comment ?? "";
 
   hourRows = card
     ? (card.hours || []).map((h) => ({ ...h }))
@@ -439,7 +437,7 @@ async function saveCard() {
       course: Number(cardCourseSelect().value) || 1,
       term: Number(cardTermSelect().value) || 1,
       totalHours: Number(cardTotalInput().value) || 0,
-      comment: cardCommentInput().value.trim(),
+      comment: card?.comment ?? "",
       hours: hourRows
         .filter((r) => Number(r.activityKindId) > 0)
         .map((r) => ({

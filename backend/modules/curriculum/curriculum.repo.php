@@ -311,7 +311,16 @@ function repoCurrSave(mysqli $conn, $body): int {
   if ($term < 1 || $term > 24)      throw new Exception('Семестр должен быть 1..24');
 
   $total   = (float)($body['total_hours'] ?? $body['totalHours'] ?? 0);
-  $comment = trim((string)($body['comment'] ?? '')) ?: null;
+  // Комментарий убран из формы карточки: при обновлении сохраняем то,
+  // что уже лежит в БД (поле остаётся в схеме для совместимости).
+  if (array_key_exists('comment', $body)) {
+    $comment = trim((string)($body['comment'] ?? '')) ?: null;
+  } else {
+    $idPrev  = (int)($body['id'] ?? 0);
+    $comment = $idPrev > 0
+      ? dbScalar($conn, "SELECT comment FROM {$curr} WHERE id = ?", [$idPrev], null)
+      : null;
+  }
   $id      = (int)($body['id'] ?? 0);
 
   // Ограничение: сумма распределённых часов НЕ МОЖЕТ превышать общую
