@@ -111,6 +111,47 @@ const TABS = [
       { json: "end_date", label: "Дата окончания *", type: "date", required: true },
     ],
   },
+  // ---- Справочники учебного плана (база uchetlfpstu_plan) ----
+  // Виды учебной деятельности и виды контроля: раньше редактировались в
+  // окне «Учебный план», теперь живут здесь. План использует те же данные.
+  {
+    key: "activity_kinds",
+    title: "Виды деятельности",
+    entityOverride: "curr_activity_kinds",
+    dynamicFields: async () => {
+      // Список типов занятий берём из справочника основной БД —
+      // связь «вид деятельности -> тип занятия» выбирается только из него.
+      let types = [];
+      try { types = await api.currLessonTypes(); } catch (_) { types = []; }
+      const opts = [`<option value="">— не задан (совпадение по имени) —</option>`]
+        .concat((types || []).map((t) => `<option value="${t.id}">${escapeHtml(t.name)}</option>`))
+        .join("");
+      return [
+        `<label class="dict-field"><span>Тип занятия (из справочника) *</span>` +
+        `<select id="dictField_lessonTypeId" data-field="lessonTypeId" class="select">${opts}</select></label>`,
+      ];
+    },
+    columns: [
+      { json: "name", label: "Название" },
+      { json: "shortName", label: "Кратко" },
+      { json: "lessonTypeName", label: "Тип занятия" },
+    ],
+    fields: [
+      { json: "name", label: "Название вида *", required: true, placeholder: "Лекции" },
+      { json: "shortName", label: "Краткое название", placeholder: "Лек" },
+    ],
+  },
+  {
+    key: "control_types",
+    title: "Виды контроля",
+    entityOverride: "curr_control_types",
+    columns: [
+      { json: "name", label: "Название" },
+    ],
+    fields: [
+      { json: "name", label: "Название вида контроля *", required: true, placeholder: "Экзамен" },
+    ],
+  },
 ];
 
 // Вкладка «Выходные дни» — календарь, отрисовываемый модулем daysOffCalendar.js

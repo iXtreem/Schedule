@@ -95,7 +95,10 @@ let controlState = {}; // { [controlTypeId]: Set(terms) }
 const TABS = [
   { key: "cards", title: "Карточки плана" },
   { key: "departments", title: "Кафедры" },
-  { key: "kinds", title: "Виды деятельности и контроля" },
+  // Вкладка «Виды деятельности и контроля» скрыта из навигации: эти
+  // справочники перенесены в окно «Справочники». Pane остаётся в DOM
+  // (для read-only таблиц), но кнопка вкладки не показывается.
+  { key: "kinds", title: "Виды деятельности и контроля", hidden: true },
   { key: "disciplines", title: "Дисциплины" },
 ];
 
@@ -129,7 +132,7 @@ async function guard(fn) {
 
 function renderTabs() {
   if (!tabsWrap()) return;
-  tabsWrap().innerHTML = TABS.map(
+  tabsWrap().innerHTML = TABS.filter((t) => !t.hidden).map(
     (t) =>
       `<button class="dict-tab${t.key === activeTab ? " active" : ""}"` +
       ` data-curr-tab="${t.key}" type="button">${esc(t.title)}</button>`
@@ -478,35 +481,35 @@ async function reloadDepartments() {
       .join("");
 }
 
-// ---------------------------- виды деятельности / контроля (вкладка 3)
+// ---------------------------- виды деятельности / контроля (read-only)
+// Справочники перенесены в окно «Справочники» (вкладки «Виды деятельности»
+// и «Виды контроля»). Здесь они показываются только для просмотра:
+// редактирование/удаление доступно оттуда, данные идентичны.
+
+const lessonTypeName = (id) => {
+  if (!id) return "—";
+  const lt = (meta?.lessonTypes || []).find((t) => Number(t.id) === Number(id));
+  return lt ? lt.name : `#${id}`;
+};
 
 async function reloadKinds() {
   if (!meta) return;
   akTable().innerHTML =
-    `<tr><th>Название</th><th>Кратко</th><th></th></tr>` +
+    `<tr><th>Название</th><th>Кратко</th><th>Тип занятия (справочник)</th></tr>` +
     meta.activityKinds
       .map(
         (k) => `<tr>
-          <td><input data-ak-field="name" data-ak-id="${k.id}" value="${esc(k.name)}" /></td>
-          <td><input data-ak-field="shortName" data-ak-id="${k.id}" value="${esc(k.shortName || "")}" /></td>
-          <td class="curr-row-actions">
-            <button class="btn btn-outline" data-save-ak="${k.id}" type="button">Сохранить</button>
-            <button class="btn btn-outline curr-danger-btn" data-del-ak="${k.id}" type="button">✕</button>
-          </td></tr>`
+          <td>${esc(k.name)}</td>
+          <td>${esc(k.shortName || "")}</td>
+          <td>${esc(lessonTypeName(k.lessonTypeId))}</td>
+        </tr>`
       )
       .join("");
 
   ctTable().innerHTML =
-    `<tr><th>Название</th><th></th></tr>` +
+    `<tr><th>Название</th></tr>` +
     meta.controlTypes
-      .map(
-        (c) => `<tr>
-          <td><input data-ct-field="name" data-ct-id="${c.id}" value="${esc(c.name)}" /></td>
-          <td class="curr-row-actions">
-            <button class="btn btn-outline" data-save-ct="${c.id}" type="button">Сохранить</button>
-            <button class="btn btn-outline curr-danger-btn" data-del-ct="${c.id}" type="button">✕</button>
-          </td></tr>`
-      )
+      .map((c) => `<tr><td>${esc(c.name)}</td></tr>`)
       .join("");
 }
 
@@ -705,82 +708,24 @@ function bindInnerHandlers() {
     }
   });
 
-  // ---- виды деятельности
-  akAddBtn()?.addEventListener("click", () =>
+  // ---- виды деятельности / контроля: редактирование перенесено в окно
+  // «Справочники». Здесь таблицы read-only, но при закрытии/изменении
+  // справочников данные перезагружаются (см. ниже обработчик событий).
+
+  // Синхронизация с окном «Справочники»: после изменения видов
+  // деятельности/контроля или типов занятий обновляем meta окна плана.
+  window.addEventListener("dict-changed", (e) => {
+    const kind = e?.detail?.kind;
+    if (kind !== "activity_kinds" && kind !== "control_types" && kind !== "lesson_types") return;
     guard(async () => {
-      const name = akNameInput().value.trim();
-      if (!name) throw new Error("Укажите название вида деятельности");
-      await api.saveCurrActivityKind({ name, short_name: akShortInput().value.trim() });
-      akNameInput().value = "";
-      akShortInput().value = "";
-      await Promise.all([loadMeta(true), reloadKinds(), reloadCards()]);
-      if (isFormOpen()) renderHoursTable();
-      setStatus("Вид деятельности добавлен.");
-    })
-  );
-
-  akTable()?.addEventListener("click", (e) => {
-    const save = e.target.closest("[data-save-ak]");
-    if (save) {
-      const id = Number(save.dataset.saveAk);
-      const name = akTable().querySelector(`[data-ak-field="name"][data-ak-id="${id}"]`)?.value.trim();
-      const shortName = akTable().querySelector(`[data-ak-field="shortName"][data-ak-id="${id}"]`)?.value.trim();
-      if (!name) return alert("Название не может быть пустым");
-      return guard(async () => {
-        await api.saveCurrActivityKind({ id, name, short_name: shortName });
-        await Promise.all([loadMeta(true), reloadKinds(), reloadCards()]);
-        if (isFormOpen()) renderHoursTable();
-        setStatus("Сохранено.");
-      });
-    }
-    const del = e.target.closest("[data-del-ak]");
-    if (del) {
-      if (!confirm("Удалить вид деятельности? Часы по нему исчезнут из плана.")) return;
-      return guard(async () => {
-        await api.deleteCurrActivityKind(Number(del.dataset.delAk));
-        await Promise.all([loadMeta(true), reloadKinds(), reloadCards()]);
-        if (isFormOpen()) renderHoursTable();
-        setStatus("Удалено.");
-      });
-    }
-  });
-
-  // ---- виды контроля
-  ctAddBtn()?.addEventListener("click", () =>
-    guard(async () => {
-      const name = ctNameInput().value.trim();
-      if (!name) throw new Error("Укажите название вида контроля");
-      await api.saveCurrControlType({ name });
-      ctNameInput().value = "";
-      await Promise.all([loadMeta(true), reloadKinds(), reloadCards()]);
-      if (isFormOpen()) renderControls();
-      setStatus("Вид контроля добавлен.");
-    })
-  );
-
-  ctTable()?.addEventListener("click", (e) => {
-    const save = e.target.closest("[data-save-ct]");
-    if (save) {
-      const id = Number(save.dataset.saveCt);
-      const name = ctTable().querySelector(`[data-ct-field="name"][data-ct-id="${id}"]`)?.value.trim();
-      if (!name) return alert("Название не может быть пустым");
-      return guard(async () => {
-        await api.saveCurrControlType({ id, name });
-        await Promise.all([loadMeta(true), reloadKinds(), reloadCards()]);
-        if (isFormOpen()) renderControls();
-        setStatus("Сохранено.");
-      });
-    }
-    const del = e.target.closest("[data-del-ct]");
-    if (del) {
-      if (!confirm("Удалить вид контроля?")) return;
-      return guard(async () => {
-        await api.deleteCurrControlType(Number(del.dataset.delCt));
-        await Promise.all([loadMeta(true), reloadKinds(), reloadCards()]);
-        if (isFormOpen()) renderControls();
-        setStatus("Удалено.");
-      });
-    }
+      await loadMeta(true);
+      await Promise.all([reloadKinds(), reloadCards()]);
+      if (isFormOpen()) {
+        renderHoursTable();
+        renderControls();
+      }
+      setStatus("Справочники обновлены — данные учебного плана синхронизированы.");
+    });
   });
 
   // ---- дисциплины плана

@@ -69,12 +69,18 @@ function currUiDepartments(): array {
 function currUiActivityKinds(): array {
   return currUiCache('activityKinds', static function () {
     $conn = planDB(getDBConnection());
+    // Карта id -> название типов занятий основной БД, чтобы в справочниках
+    // показывать связанное название, а не только id.
+    $typeNames = [];
+    foreach (currUiLessonTypes(getDBConnection()) as $t) $typeNames[$t['id']] = $t['name'];
     return array_map(static fn($k) => [
       'id'   => (int)$k['id'],
       'name' => (string)$k['name'],
       'shortName' => (string)($k['short_name'] ?? ''),
       'lessonTypeId' => isset($k['lesson_type_id']) && $k['lesson_type_id'] !== null
         ? (int)$k['lesson_type_id'] : null,
+      'lessonTypeName' => (isset($k['lesson_type_id']) && $k['lesson_type_id'] !== null)
+        ? ($typeNames[(int)$k['lesson_type_id']] ?? '') : '',
     ], repoCurrActivityKinds($conn));
   });
 }

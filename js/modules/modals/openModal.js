@@ -36,10 +36,8 @@ if (termInput) {
   termInput.disabled = true;
 }
 
-const subjectSearch = document.getElementById("subjectSearch");
-const teacherSearch = document.getElementById("teacherSearch");
-const typeSearch = document.getElementById("typeSearch");
-const roomSearch = document.getElementById("roomSearch");
+// Поиск дисциплины/преподавателя/типа/аудитории из модалки занятия удалён
+// по требованию — остаются только выпадающие списки.
 
 const resetModalBtn = document.getElementById("resetModalBtn");
 
@@ -196,7 +194,7 @@ function fillRoomSelectWithPrefs(
   if (!roomSelect) return;
 
   const currentValue = roomSelect.value;
-  const filtered = filterByName(roomList || [], roomSearch?.value || "");
+  const filtered = [...(roomList || [])];
 
   const sorted = [...filtered].sort((a, b) => {
     const aPrimary = roomIsPrimaryPreference(a.id) ? 1 : 0;
@@ -261,42 +259,12 @@ async function loadRoomPrefsForSelectedSubject() {
   fillRoomSelectWithPrefs(state.rooms);
 }
 
-let modalSearchBound = false;
-
+// Поиск в модалке занятия удалён — остаются только выпадающие списки.
 function bindModalSearch() {
-  if (modalSearchBound) return;
-  modalSearchBound = true;
-
-  if (subjectSearch && subjectSelect) {
-    subjectSearch.addEventListener("input", () => {
-      const filtered = filterByName(modalSubjects, subjectSearch.value);
-      refillSelectKeepingValue(subjectSelect, filtered);
-    });
-  }
-
-  if (teacherSearch && teacherSelect) {
-    teacherSearch.addEventListener("input", () => {
-      const filtered = filterByName(modalTeachers, teacherSearch.value);
-      refillSelectKeepingValue(teacherSelect, filtered);
-    });
-  }
-
-  if (typeSearch && typeSelect) {
-    typeSearch.addEventListener("input", () => {
-      const filtered = filterByName(modalTypes, typeSearch.value);
-      refillSelectKeepingValue(typeSelect, filtered);
-    });
-  }
-
-  if (roomSearch && roomSelect) {
-    roomSearch.addEventListener("input", () => {
-      fillRoomSelectWithPrefs(state.rooms);
-    });
-
-    roomSelect.addEventListener("change", () => {
-      syncRoomSelectHighlight();
-    });
-  }
+  if (!roomSelect) return;
+  roomSelect.addEventListener("change", () => {
+    syncRoomSelectHighlight();
+  });
 }
 
 export function fillSelect(selectEl, list, placeholder = "— выбери —") {
@@ -413,11 +381,7 @@ export async function openModal({ groupId, dayIndex, pairIndex, lessonId }) {
   modalTitle.textContent = "Редактирование занятия";
   modalSubtitle.textContent = `${group?.name ?? "Группа"}, ${DAY_NAMES[dayIndex]}, пара ${pairIndex + 1}`;
 
-  // сброс поисков
-  if (subjectSearch) subjectSearch.value = "";
-  if (teacherSearch) teacherSearch.value = "";
-  if (typeSearch) typeSearch.value = "";
-  if (roomSearch) roomSearch.value = "";
+  // сброс произвольного текста (поиск из модалки удалён)
   if (customTextInput) customTextInput.value = "";
 
   // стартовый список до выбора дисциплины
@@ -911,11 +875,7 @@ resetModalBtn.addEventListener("click", async () => {
   const groupId = state.currentEdit?.groupId;
   if (!groupId) return;
 
-  // очистим поиски
-  subjectSearch.value = "";
-  teacherSearch.value = "";
-  typeSearch.value = "";
-  roomSearch.value = "";
+  // очистка произвольного текста (поиск из модалки удалён)
   if (customTextInput) customTextInput.value = "";
 
   // вернём базовые списки
