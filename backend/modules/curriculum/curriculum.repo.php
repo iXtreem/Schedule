@@ -616,16 +616,43 @@ function repoCurrReplaceHours(mysqli $conn, int $curriculumId, $hours): void {
   }
 }
 
-// Перезапись видов контроля: [{control_type_id, terms:[1,2]}]
+/* Перезапись видов контроля: [{control_type_id, terms:[1,2]}]
+ *
+ * ЖЁСТКОЕ ТРЕБОВАНИЕ: «вид контроля по семестрам» связан со справочником
+ * «Типы занятий» (lesson_type основной БД). Разрешены ТОЛЬКО живые виды
+ * контроля control_type с заполненной связкой lesson_type_id — то есть
+ * добавленные в справочнике. Перед проверкой control_type синхронизируется
+ * со справочником (лениво), поэтому только что созданный тип занятия сразу
+ * доступен для выбора в карточке плана. Пустой список controls — валиден
+ * (контроль не задан). */
 function repoCurrReplaceControls(mysqli $conn, int $curriculumId, $controls): void {
   $cc = planTab('curriculum_control');
   if (!is_array($controls)) return;
+
+  // Актуальное зеркало справочника «Типы занятий» перед валидацией.
+  try { syncControlsWithLessonTypes($conn, getDBConnection()); }
+  catch (Throwable $e) { error_log('syncControlsWithLessonTypes skipped: ' . $e->getMessage()); }
+
+  // Допустимые виды контроля: живые и привязанные к lesson_type.
+  $allowed = [];
+  foreach (dbAll($conn,
+      "SELECT id FROM {" . planTab('control_type') . "}
+       WHERE is_deleted = 0 AND lesson_type_id IS NOT NULL") as $r) {
+    $allowed[(int)$r['id']] = true;
+  }
 
   dbExec($conn, "DELETE FROM {$cc} WHERE curriculum_id = ?", [$curriculumId]);
 
   foreach ($controls as $row) {
     $ctId = (int)($row['control_type_id'] ?? $row['controlTypeId'] ?? 0);
     if ($ctId <= 0) continue;
+    if (!isset($allowed[$ctId])) {
+      throw new Exception(
+        'Вид контроля №' . $ctId . ' отсутствует в справочнике «Типы занятий». '
+        . 'Добавьте тип занятия в «Справочники → Типы занятий» — вид контроля '
+        . 'появится в плане автоматически.'
+      );
+    }
     $terms = $row['terms'] ?? ($row['term'] ?? []);
     if (!is_array($terms)) $terms = [$terms];
     foreach ($terms as $t) {
