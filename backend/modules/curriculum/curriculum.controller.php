@@ -204,12 +204,28 @@ function currCacheReset() {
 // контроль -> [{controlTypeId, terms:[..]}].
 function currUiCard(mysqli $planConn, int $id): array {
   $card = repoCurrCard($planConn, $id);
+  // Имена видов деятельности: актуальное зеркало справочника + «осиротевшие»
+  // удалённые строки activity_kind (тип занятия удалён) — чтобы UI показал
+  // полное название с пометкой вместо «странного» числового id в select.
+  $akNames = [];
+  foreach (repoCurrActivityKinds($planConn) as $k) {
+    $akNames[(int)$k['id']] = (string)$k['name'];
+  }
+  try {
+    foreach (dbAll($planConn,
+        "SELECT id, name FROM {" . planTab('activity_kind') . "} WHERE is_deleted = 1") as $r) {
+      $akNames[(int)$r['id']] = (string)$r['name'];
+    }
+  } catch (Throwable $e) {
+    error_log('currUiCard orphan kind names skipped: ' . $e->getMessage());
+  }
   $hours = [];
   foreach (($card['hours'] ?? []) as $h) {
     $hours[] = [
-      'groupId'        => $h['group_id'] !== null ? (int)$h['group_id'] : null,
-      'activityKindId' => (int)$h['activity_kind_id'],
-      'hours'          => (float)$h['hours'],
+      'groupId'         => $h['group_id'] !== null ? (int)$h['group_id'] : null,
+      'activityKindId'  => (int)$h['activity_kind_id'],
+      'activityKindName'=> $akNames[(int)$h['activity_kind_id']] ?? '',
+      'hours'           => (float)$h['hours'],
     ];
   }
   // Названия видов контроля подтягиваем из control_type: карточка всегда
@@ -218,6 +234,29 @@ function currUiCard(mysqli $planConn, int $id): array {
   $ctNames = [];
   foreach (repoCurrControlTypes($planConn) as $ct) {
     $ctNames[(int)$ct['id']] = (string)$ct['name'];
+  }
+  try {
+    $mp = currMainPrefix();
+    // Сохранённые, но уже не активные виды контроля (связанный тип занятия
+    // удалён из справочника) — берём их id и полные имена напрямую из
+    // lesson_type: UI покажет строку с пометкой вместо «пустого» select.
+    $ctIds = array_values(array_filter(array_map(
+      static fn($c) => (int)$c['control_type_id'], ($card['controls'] ?? []))));
+    if ($ctIds) {
+      $in = implode(',', array_map('intval', $ctIds));
+      foreach (dbAll($planConn,
+          "SELECT ct.id, ct.name, ct.lesson_type_id FROM {" . planTab('control_type') . "} ct
+            WHERE ct.is_deleted = 1 AND ct.id IN ({$in})") as $r) {
+        $ltId = (int)$r['lesson_type_id'];
+        if ($ltId <= 0 || isset($ctNames[(int)$r['id']])) continue;
+        $ltName = dbScalar(getDBConnection(),
+          "SELECT name FROM {$mp}lesson_type WHERE id = ? LIMIT 1",
+          [$ltId], null);
+        $ctNames[(int)$r['id']] = (string)($ltName ?? $r['name']);
+      }
+    }
+  } catch (Throwable $e) {
+    error_log('currUiCard orphan control names skipped: ' . $e->getMessage());
   }
   $ctrl = [];
   foreach (($card['controls'] ?? []) as $c) {

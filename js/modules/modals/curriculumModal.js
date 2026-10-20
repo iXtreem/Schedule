@@ -362,14 +362,29 @@ function renderHoursTable() {
       )
       .join("");
 
-  const kindOptions = (selected) =>
-    meta.activityKinds
-      .map(
-        (k) =>
-          `<option value="${k.id}"${Number(selected) === k.id ? " selected" : ""}>` +
-          `${esc(k.name)}</option>`
-      )
-      .join("");
+  const kindOptions = (selected) => {
+    const selId = Number(selected);
+    const known = meta.activityKinds.some((k) => k.id === selId);
+    // Сохранённый вид, которого больше нет в актуальном зеркале справочника
+    // (тип занятия удалён/переименован) — показываем отдельным пунктом с
+    // пометкой, иначе select «сбрасывал» выбор и отображались странные id.
+    const orphanOpt =
+      selId && !known
+        ? `<option value="${selId}" selected disabled>` +
+          `${esc((card && card.hours || []).find((h) => Number(h.activityKindId) === selId)?.activityKindName
+            || `Вид №${selId}`)} (нет в справочнике)</option>`
+        : "";
+    return (
+      orphanOpt +
+      meta.activityKinds
+        .map(
+          (k) =>
+            `<option value="${k.id}"${Number(selected) === k.id ? " selected" : ""}>` +
+            `${esc(k.name)}</option>`
+        )
+        .join("")
+    );
+  };
 
   hoursTable().innerHTML =
     `<tr><th>Группа</th><th>Вид деятельности</th><th>Часы</th><th></th></tr>` +
@@ -426,8 +441,21 @@ function ctrlRowHtml(row, idx) {
   const used = selectedControlIds(row.ctId);
   const set = (row.ctId && controlState[row.ctId]) || new Set();
 
+  // Если вид из сохранённых данных больше НЕ в справочнике (тип занятия
+  // удалён/переименован) — добавляем его в список помеченным, чтобы select
+  // не «сбрасывал» выбор и значение можно было заменить на актуальное.
+  const curCt = row.ctId
+    ? meta.controlTypes.find((ct) => ct.id === row.ctId) || null
+    : null;
+  const orphanOpt =
+    row.ctId && !curCt
+      ? `<option value="${row.ctId}" selected disabled>` +
+        `${esc(String(row.name || "Вид контроля"))} (нет в справочнике)</option>`
+      : "";
+
   const options =
     `<option value="">— вид контроля —</option>` +
+    orphanOpt +
     meta.controlTypes
       .map(
         (ct) =>
@@ -461,6 +489,16 @@ function ctrlRowHtml(row, idx) {
 // Строки вида контроля: [все виды с непустым набором семестров] + 1 пустая.
 function ctrlRows() {
   const rows = [];
+  const knownIds = new Set(meta.controlTypes.map((ct) => ct.id));
+  // Сохранённые виды, которых больше нет в справочнике («осиротевшие» —
+  // тип занятия удалён/переименован): показываем отдельной строкой с
+  // пометкой, чтобы семестры не пропадали молча и выбор можно было починить.
+  for (const [ctIdStr, set] of Object.entries(controlState)) {
+    const ctId = Number(ctIdStr);
+    if (!set || set.size === 0 || knownIds.has(ctId)) continue;
+    const saved = (card && card.controls || []).find((c) => Number(c.controlTypeId) === ctId);
+    rows.push({ ctId, name: saved?.controlTypeName || saved?.name || `Вид №${ctId}` });
+  }
   for (const ct of meta.controlTypes) {
     const set = controlState[ct.id];
     if (set && set.size > 0) rows.push({ ctId: ct.id });
