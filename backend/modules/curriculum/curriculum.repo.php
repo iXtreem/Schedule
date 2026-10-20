@@ -105,6 +105,78 @@ function repoCurrActivityKindDelete(mysqli $conn, int $id): void {
   dbExec($conn, "UPDATE {$t} SET is_deleted = 1 WHERE id = ?", [$id]);
 }
 
+/* ==========================================================================
+ * ЕДИНЫЙ ИСТОЧНИК ПРАВДЫ: «Справочники → Типы занятий» (lesson_type).
+ * --------------------------------------------------------------------------
+ * activity_kind в базе учебного плана — это ЗЕРКАЛО справочника типов
+ * занятий. Создавать, переименовывать и удалять виды деятельности можно
+ * ТОЛЬКО через окно «Справочники → Типы занятий»; эта функция синхронизирует
+ * таблицу activity_kind с lesson_type:
+ *   * для каждого типа занятия гарантирована строка activity_kind со связкой
+ *     lesson_type_id (если тип создали после вида — вид «привязывается» к
+ *     типу, а не дублируется);
+ *   * виды, привязанные к удалённому типу занятия, помечаются is_deleted = 1;
+ *   * имена/сокращения видов приводятся к названию типа занятия.
+ * Вызывается при каждом CRUD в dict_lesson_types и лениво — при чтении
+ * meta окна «Учебный план». Ошибки соединения с планом не блокируют
+ * основную работу программы (ловит вызывающий код).
+ * ========================================================================= */
+function syncKindsWithLessonTypes(mysqli $planConn, mysqli $mainConn): void {
+  $t  = planTab('activity_kind');
+  $mp = currMainPrefix();
+
+  $types = dbAll($mainConn,
+    "SELECT id, name, short_name FROM {$mp}lesson_type
+      WHERE is_deleted = 0 ORDER BY id");
+
+  foreach ($types as $ty) {
+    $ltId = (int)$ty['id'];
+    $name = trim((string)($ty['name'] ?? '')) ?: ('Тип #' . $ltId);
+    $short = trim((string)($ty['short_name'] ?? '')) ?: null;
+
+    // 1) уже есть привязанный живой вид — обновляем имя по справочнику
+    $linked = (int)dbScalar($planConn,
+      "SELECT COUNT(*) FROM {$t} WHERE lesson_type_id = ? AND is_deleted = 0",
+      [$ltId], 0);
+    if ($linked > 0) {
+      dbExec($planConn,
+        "UPDATE {$t} SET name = ?, short_name = ? WHERE lesson_type_id = ? AND is_deleted = 0",
+        [$name, $short, $ltId]);
+      continue;
+    }
+
+    // 2) resurrect ранее удалённый привязанный вид (часы не теряются)
+    $revived = dbExec($planConn,
+      "UPDATE {$t} SET is_deleted = 0, name = ?, short_name = ?
+        WHERE lesson_type_id = ? LIMIT 1",
+      [$name, $short, $ltId]);
+    if ($revived > 0) continue;
+
+    // 3) живой вид с таким же именем (старые данные без связи) — привязать
+    $bound = dbExec($planConn,
+      "UPDATE {$t} SET lesson_type_id = ?, name = ?, short_name = ?
+        WHERE name = ? AND is_deleted = 0 AND lesson_type_id IS NULL LIMIT 1",
+      [$ltId, $name, $short, $name]);
+    if ($bound > 0) continue;
+
+    // 4) создать новый вид-зеркало
+    dbExec($planConn,
+      "INSERT INTO {$t} (name, short_name, lesson_type_id, sort_order) VALUES (?, ?, ?, 0)",
+      [$name, $short, $ltId]);
+  }
+
+  // Виды, привязанные к удалённому/несуществующему типу — выключить.
+  dbExec($planConn,
+    "UPDATE {$t} ak
+       SET ak.is_deleted = 1
+     WHERE ak.is_deleted = 0
+       AND ak.lesson_type_id IS NOT NULL
+       AND NOT EXISTS (SELECT 1 FROM {$mp}lesson_type lt
+                        WHERE lt.id = ak.lesson_type_id AND lt.is_deleted = 0)");
+
+  repoCurrKindLinkCacheReset();
+}
+
 // -- Виды контроля ----------------------------------------------------------------
 
 function repoCurrControlTypes(mysqli $conn): array {

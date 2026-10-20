@@ -796,37 +796,9 @@
             </div>
           </div>
 
-          <!-- Вкладка 3: виды деятельности + виды контроля -->
-          <div id="currPaneKinds" class="curr-pane hidden">
-            <div class="hint">
-              Виды учебной деятельности — это колонки часов в карточке плана
-              (лекции, лабораторные, практические, КСР/КРВ...). Виды контроля —
-              Экзамен, Диф. зачет, Зачет, Курсовой проект, Курсовая работа.
-            </div>
-            <div class="curr-kinds-cols">
-              <div class="curr-kind-col">
-                <h4>Виды учебной деятельности</h4>
-                <div class="curr-inline-add">
-                  <input id="currAkName" class="select" placeholder="Название *" />
-                  <input id="currAkShort" class="select" placeholder="Кратко (Лек)" />
-                  <button id="currAkAddBtn" class="btn" type="button">Добавить</button>
-                </div>
-                <div class="dict-table-wrap curr-table-wrap">
-                  <table id="currAkTable" class="table curr-table"></table>
-                </div>
-              </div>
-              <div class="curr-kind-col">
-                <h4>Виды контроля</h4>
-                <div class="curr-inline-add">
-                  <input id="currCtName" class="select" placeholder="Название *" />
-                  <button id="currCtAddBtn" class="btn" type="button">Добавить</button>
-                </div>
-                <div class="dict-table-wrap curr-table-wrap">
-                  <table id="currCtTable" class="table curr-table"></table>
-                </div>
-              </div>
-            </div>
-          </div>
+          <!-- Вкладка 3 (виды деятельности/контроля) вырезана: виды учебной
+               деятельности = справочник «Типы занятий» (Справочники),
+               синхронизируются автоматически (syncKindsWithLessonTypes). -->
 
           <!-- Вкладка 4: дисциплины плана (мета: дисциплина + кафедра) -->
           <div id="currPaneDisciplines" class="curr-pane hidden">

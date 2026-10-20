@@ -69,6 +69,11 @@ function currUiDepartments(): array {
 function currUiActivityKinds(): array {
   return currUiCache('activityKinds', static function () {
     $conn = planDB(getDBConnection());
+    // Единый источник правды — справочник «Типы занятий» (lesson_type).
+    // Перед отдачей списка приводим activity_kind в соответствие справочнику
+    // (ленивая синхронизация; ошибки не блокируют работу с планом).
+    try { syncKindsWithLessonTypes($conn, getDBConnection()); }
+    catch (Throwable $e) { error_log('syncKindsWithLessonTypes skipped: ' . $e->getMessage()); }
     return array_map(static fn($k) => [
       'id'   => (int)$k['id'],
       'name' => (string)$k['name'],
@@ -77,6 +82,17 @@ function currUiActivityKinds(): array {
         ? (int)$k['lesson_type_id'] : null,
     ], repoCurrActivityKinds($conn));
   });
+}
+
+/* Редактирование видов деятельности перенесено в «Справочники → Типы
+ * занятий»: activity_kind — зеркало lesson_type (см. syncKindsWithLessonTypes).
+ * Все POST/PUT/DELETE по видам возвращают 409 со внятным сообщением. */
+function currActivityKindReadOnly(): void {
+  errorJson(
+    'Виды учебной деятельности совпадают со справочником «Типы занятий». '
+    . 'Измените тип занятия в окне «Справочники → Типы занятий» — план обновится автоматически.',
+    409
+  );
 }
 
 // Типы занятий основной БД — для выпадающего списка связи
@@ -400,44 +416,16 @@ function curriculumController($method, $entity) {
 
       case 'curriculum_activity': {
         if ($method === 'GET') { sendJson(repoCurrActivityKinds($conn)); return; }
-        if ($method === 'POST' || $method === 'PUT') {
-          $body = getJsonBody() ?? [];
-          $id = (int)($body['id'] ?? 0);
-          sendJson(['success' => true, 'id' => repoCurrActivityKindSave($conn, $id ?: null, $body)]);
-          return;
-        }
-        if ($method === 'DELETE') {
-          repoCurrActivityKindDelete($conn, (int)getQuery('id', 0));
-          sendJson(['success' => true]);
-          return;
-        }
-        errorJson('Method not allowed', 405);
+        // Редактирование видов вырезано: единственный источник — справочник
+        // «Типы занятий» (см. currActivityKindReadOnly / syncKindsWithLessonTypes).
+        currActivityKindReadOnly();
       }
 
-      // Справочник «Виды деятельности» в окне «Справочники»: GET отдаёт
-      // список с camelCase-полями (включая lessonTypeId — связь с типом
-      // занятия основной БД), POST принимает как snake_case, так и
-      // camelCase (name/shortName/lessonTypeId/sortOrder/id).
+      // Справочник «Виды деятельности»: только чтение (зеркало справочника
+      // «Типы занятий» основной БД; связь lessonTypeId обязательна).
       case 'curr_activity_kinds': {
         if ($method === 'GET') { sendJson(currUiActivityKinds()); return; }
-        if ($method === 'POST' || $method === 'PUT') {
-          $body = getJsonBody() ?? [];
-          $normalized = [
-            'name'       => (string)($body['name'] ?? ''),
-            'short_name' => (string)($body['short_name'] ?? $body['shortName'] ?? ''),
-            'lesson_type_id' => $body['lesson_type_id'] ?? $body['lessonTypeId'] ?? null,
-            'sort_order' => (int)($body['sort_order'] ?? $body['sortOrder'] ?? 0),
-          ];
-          $id = (int)($body['id'] ?? 0);
-          sendJson(['success' => true, 'id' => repoCurrActivityKindSave($conn, $id ?: null, $normalized)]);
-          return;
-        }
-        if ($method === 'DELETE') {
-          repoCurrActivityKindDelete($conn, (int)getQuery('id', 0));
-          sendJson(['success' => true]);
-          return;
-        }
-        errorJson('Method not allowed', 405);
+        currActivityKindReadOnly();
       }
 
       // Справочник «Виды контроля» в окне «Справочники».

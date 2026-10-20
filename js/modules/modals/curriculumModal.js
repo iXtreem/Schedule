@@ -36,7 +36,6 @@ const statusEl = () => $id("currStatus");
 const panes = () => ({
   cards: $id("currPaneCards"),
   departments: $id("currPaneDepartments"),
-  kinds: $id("currPaneKinds"),
   disciplines: $id("currPaneDisciplines"),
 });
 
@@ -53,14 +52,17 @@ const depShortInput = () => $id("currDepShort");
 const depAddBtn = () => $id("currDepAddBtn");
 const depTable = () => $id("currDepTable");
 
-// Виды деятельности / виды контроля
-const akNameInput = () => $id("currAkName");
-const akShortInput = () => $id("currAkShort");
-const akAddBtn = () => $id("currAkAddBtn");
-const akTable = () => $id("currAkTable");
-const ctNameInput = () => $id("currCtName");
-const ctAddBtn = () => $id("currCtAddBtn");
-const ctTable = () => $id("currCtTable");
+// Виды деятельности и контроля РЕДАКТИРУЮТСЯ ТОЛЬКО в «Справочники → Типы
+// занятий» / справочниках плана. Вкладка-редактор из окна «Учебный план»
+// вырезана; геттеры удалённых элементов оставлены как null-safe заглушки,
+// чтобы случайные вызовы не ломали страницу.
+const akNameInput = () => null;
+const akShortInput = () => null;
+const akAddBtn = () => null;
+const akTable = () => null;
+const ctNameInput = () => null;
+const ctAddBtn = () => null;
+const ctTable = () => null;
 
 // Дисциплины плана
 const newDiscNameInput = () => $id("currNewDiscName");
@@ -95,7 +97,9 @@ let controlState = {}; // { [controlTypeId]: Set(terms) }
 const TABS = [
   { key: "cards", title: "Карточки плана" },
   { key: "departments", title: "Кафедры" },
-  { key: "kinds", title: "Виды деятельности и контроля" },
+  // Вкладка «Виды деятельности и контроля» вырезана: виды учебной
+  // деятельности = справочник «Справочники → Типы занятий» (единая таблица
+  // lesson_type), синхронизируется с планом автоматически.
   { key: "disciplines", title: "Дисциплины" },
 ];
 
