@@ -271,6 +271,39 @@ function currUiCard(mysqli $planConn, int $id): array {
     }
     $ctrl[$ctId]['terms'][] = $t;
   }
+  // ВАЖНО: controlTypeId приводим к КАНОНИЧЕСКОМУ id зеркала (минимальный id
+  // среди живых control_type, привязанных к тому же типу занятия). Исторические
+  // дубли-зеркала после чистки репозитория остаются в БД с lesson_type_id=NULL,
+  // и без нормализации UI не находил бы такой id в списке справочника — выбор
+  // вида контроля «не применялся», а галочки семестров писали «Сначала
+  // выберите вид контроля». Часы нормализуем аналогично.
+  $akCanonical = []; // activity_kind id -> canonical id (через lesson_type)
+  try {
+    $akRows = dbAll($planConn,
+      "SELECT id, lesson_type_id FROM {" . planTab('activity_kind') . "}
+        WHERE is_deleted = 0 AND lesson_type_id IS NOT NULL");
+    $akMin = [];
+    foreach ($akRows as $r) {
+      $lt = (int)$r['lesson_type_id'];
+      $id = (int)$r['id'];
+      if (!isset($akMin[$lt]) || $id < $akMin[$lt]) $akMin[$lt] = $id;
+    }
+    foreach ($akRows as $r) {
+      $akCanonical[(int)$r['id']] = $akMin[(int)$r['lesson_type_id']];
+    }
+  } catch (Throwable $e) {
+    error_log('currUiCard kind canonicalization skipped: ' . $e->getMessage());
+  }
+  $hours = array_map(static function ($h) use ($akCanonical) {
+    $kid = (int)$h['activityKindId'];
+    $h['activityKindId'] = $akCanonical[$kid] ?? $kid;
+    return $h;
+  }, $hours);
+  foreach ($ctrl as &$cRow) {
+    $kid = (int)$cRow['controlTypeId'];
+    $cRow['controlTypeId'] = $ctCanonical[$kid] ?? $kid;
+  }
+  unset($cRow);
   return [
     'id'             => (int)$card['id'],
     'disciplineMetaId' => (int)$card['discipline_id'],
