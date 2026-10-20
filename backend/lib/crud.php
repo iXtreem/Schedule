@@ -183,6 +183,7 @@ if (!function_exists('crudConfig')) {
 
           // id формируется автоматически (AUTO_INCREMENT)
           $newId = dbInsert($conn, "INSERT INTO {$cfg['table']} (" . implode(',', $cols) . ") VALUES (" . implode(',', $marks) . ")", $params);
+          crudAfterLessonTypeChange($conn, $key);
           sendJson(['success' => true, 'id' => $newId], 201);
         }
 
@@ -197,6 +198,7 @@ if (!function_exists('crudConfig')) {
 
         $params[] = $id;
         dbExec($conn, "UPDATE {$cfg['table']} SET " . implode(', ', $set) . " WHERE {$cfg['pk']} = ?", $params);
+        crudAfterLessonTypeChange($conn, $key);
         sendJson(['success' => true, 'id' => $id]);
       }
 
@@ -213,12 +215,31 @@ if (!function_exists('crudConfig')) {
           $aff = dbExec($conn, "DELETE FROM {$cfg['table']} WHERE {$cfg['pk']} = ?", [$id]);
           if ($aff === 0) errorJson('Запись не найдена', 404);
         }
+        crudAfterLessonTypeChange($conn, $key);
         sendJson(['success' => true]);
       }
 
       errorJson('Method not allowed', 405);
     } catch (Exception $e) {
       errorJson($e->getMessage(), 409);
+    }
+  }
+
+  /* Хук после изменения справочника «Типы занятий»: синхронизируем зеркало
+   * activity_kind в базе учебного плана (единый источник правды — lesson_type,
+   * см. syncKindsWithLessonTypes в curriculum.repo.php). Ошибки плана не должны
+   * ломать уже успешный CRUD справочника — только пишем в лог. */
+  function crudAfterLessonTypeChange(mysqli $conn, string $key): void {
+    if ($key !== 'lesson_types') return;
+    try {
+      $currRepo = __DIR__ . '/../modules/curriculum/curriculum.repo.php';
+      if (!is_file($currRepo)) return;
+      require_once $currRepo;
+      if (!function_exists('syncKindsWithLessonTypes')) return;
+      $planConn = planDB($conn);
+      syncKindsWithLessonTypes($planConn, $conn);
+    } catch (Throwable $e) {
+      error_log('crudAfterLessonTypeChange: ' . $e->getMessage());
     }
   }
 }
