@@ -7,7 +7,7 @@
 $serverName = "localhost";     // XAMPP: MySQL доступен по localhost
 $database   = "uchetlfpstu";   // Имя базы данных (схема: База данных/schema.sql)
 $username   = "root";          // Стандартный пользователь XAMPP
-$password   = "testpass";              // В XAMPP пароль root по умолчанию пустой
+$password   = "";              // В XAMPP пароль root по умолчанию пустой
 
 // Отдельная база «Учебный план» (модуль backend/modules/curriculum).
 // Создаётся автоматически при первом запуске; если прав на CREATE DATABASE
@@ -105,6 +105,7 @@ function planDB(mysqli $conn): mysqli {
     if (!$schemaDone) {
       planCreateSchema($conn, 'plan_');
       planMigrateActivityKind($conn, 'plan_');
+      planMigrateControlType($conn, 'plan_');
       planFillDefaults($conn, 'plan_');
       $schemaDone = true;
     }
@@ -128,6 +129,7 @@ function planDB(mysqli $conn): mysqli {
   if (!$schemaDone) {
     planCreateSchema($planConn, '');
     planMigrateActivityKind($planConn, '');
+    planMigrateControlType($planConn, '');
     planFillDefaults($planConn, '');
     $schemaDone = true;
   }
@@ -198,6 +200,29 @@ function planMigrateActivityKind(mysqli $conn, string $prefix) {
     }
   } catch (Throwable $e) {
     error_log('planMigrateActivityKind: ' . $e->getMessage());
+  }
+}
+
+/* ==========================================================================
+ * Миграция таблицы control_type для существующих баз: старые версии схемы
+ * не содержат колонку lesson_type_id (связь «вид контроля по семестрам» ->
+ * справочник «Типы занятий»). CREATE TABLE IF NOT EXISTS таблицу не обновляет,
+ * поэтому колонка и индекс добавляются отдельно; ошибки молча пропускаются.
+ * ========================================================================== */
+function planMigrateControlType(mysqli $conn, string $prefix): void {
+  $p = $prefix;
+  if (!dbTableExists($conn, $p . 'control_type')) return; // создастся целиком из planCreateSchema
+
+  if (!dbColumnExists($conn, $p . 'control_type', 'lesson_type_id')) {
+    try {
+      $conn->query(
+        "ALTER TABLE {$p}control_type
+           ADD COLUMN lesson_type_id INT NULL AFTER sort_order,
+           ADD KEY idx_ct_lesson_type (lesson_type_id)"
+      );
+    } catch (Throwable $e) {
+      error_log('planMigrateControlType: ' . $e->getMessage());
+    }
   }
 }
 
@@ -295,10 +320,10 @@ function planCreateSchema(mysqli $conn, string $prefix) {
     UNIQUE KEY uq_control_name (name),
     KEY idx_ct_lesson_type (lesson_type_id)
   ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4");
-  if (!$conn->query("ALTER TABLE {$p}control_type ADD COLUMN lesson_type_id INT NULL AFTER sort_order")) {
-    // колонка уже есть (1060 Duplicate column) или таблица ещё не создана — молча пропускаем
-  }
-  $conn->query("ALTER TABLE {$p}control_type ADD KEY idx_ct_lesson_type (lesson_type_id)");
+
+  // Идемпотентная миграция для СУЩЕСТВУЮЩИХ баз, созданных по старой схеме
+  // (без колонки lesson_type_id). Ошибки дублей молча пропускаются внутри.
+  planMigrateControlType($conn, $p);
 
   $conn->query("CREATE TABLE IF NOT EXISTS {$p}curriculum_control (
     id              INT NOT NULL AUTO_INCREMENT PRIMARY KEY,
