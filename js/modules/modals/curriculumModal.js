@@ -268,7 +268,11 @@ function renderCardsTable() {
 // ------------------------------------------------------------- форма карточки
 
 async function openCardForm(cardId) {
-  await loadMeta();
+  // meta всегда перечитываем: справочник «Типы занятий» мог измениться,
+  // а серверная ленивая синхронизация зеркал (activity_kind/control_type)
+  // выполняется именно при этом запросе. Иначе в карточке оставался бы
+  // устаревший список видов (например, только «Лекции/Лекция»).
+  await loadMeta(true);
   editingCardId = cardId || null;
 
   // Дисциплины для выбора (из мета; metaId = id discipline_meta)
@@ -437,6 +441,9 @@ function selectedControlIds(skipId = null) {
 // справочника «Типы занятий») + галочки (чекбоксы) семестров 1..8, как было
 // раньше. Отмеченные галочками семестры записываются в БД при сохранении.
 // Пустой выбор вида = строка служит «добавить вид».
+// ВАЖНО: у строки есть data-prev-ct-id — по нему обработчик change находит
+// прежний вид контроля; без него выбор «не применялся» и поле возвращалось
+// к «— вид контроля —».
 function ctrlRowHtml(row, idx) {
   const used = selectedControlIds(row.ctId);
   const set = (row.ctId && controlState[row.ctId]) || new Set();
@@ -476,7 +483,8 @@ function ctrlRowHtml(row, idx) {
     .join("");
 
   return (
-    `<div class="curr-ctrl-row" data-ctrl-row="${idx}" data-ct-id="${row.ctId ?? ""}">` +
+    `<div class="curr-ctrl-row" data-ctrl-row="${idx}" data-ct-id="${row.ctId ?? ""}"` +
+    ` data-prev-ct-id="${row.ctId ?? ""}">` +
     `<select class="select curr-ctrl-select" data-ctrl-select="${idx}">` +
     `${options}</select>` +
     `<span class="curr-ctrl-terms">${termBoxes}</span>` +
@@ -486,7 +494,9 @@ function ctrlRowHtml(row, idx) {
   );
 }
 
-// Строки вида контроля: [все виды с непустым набором семестров] + 1 пустая.
+// Строки вида контроля: [все выбранные виды (даже без галочек — иначе
+// строка исчезала сразу после выбора вида и нельзя было отметить семестры)]
+// + 1 пустая «добавить вид». Пустые наборы при сохранении в БД не пишутся.
 function ctrlRows() {
   const rows = [];
   const knownIds = new Set(meta.controlTypes.map((ct) => ct.id));
@@ -500,8 +510,7 @@ function ctrlRows() {
     rows.push({ ctId, name: saved?.controlTypeName || saved?.name || `Вид №${ctId}` });
   }
   for (const ct of meta.controlTypes) {
-    const set = controlState[ct.id];
-    if (set && set.size > 0) rows.push({ ctId: ct.id });
+    if (controlState[ct.id]) rows.push({ ctId: ct.id });
   }
   rows.push({ ctId: null }); // пустая строка «＋ добавить вид»
   return rows;
@@ -750,13 +759,17 @@ function bindInnerHandlers() {
   // Строка = {вид, отмеченные семестры}; значения пишутся в БД при
   // сохранении карточки (saveCard → controls[].terms).
 
-  // Выбор вида контроля (только полные названия из «Типы занятий»)
+  // Выбор вида контроля (только полные названия из «Типы занятий»).
+  // Прежний вид берём из data-prev-ct-id строки, а НЕ из data-ct-id:
+  // data-ct-id заполняется только для уже сохранённых видов, и при выборе
+  // вида в пустой строке прежний id определялся неверно — выбор «сбрасывался»
+  // обратно на «— вид контроль —».
   controlsWrap()?.addEventListener("change", (e) => {
     const sel = e.target.closest("[data-ctrl-select]");
     if (sel) {
       const tr = sel.closest("[data-ctrl-row]");
       const ctId = Number(sel.value) || null;
-      const prevCtId = Number(tr?.dataset.ctId || 0);
+      const prevCtId = Number(tr?.dataset.prevCtId || 0);
 
       // Семестры, отмеченные галочками в этой строке (до перерисовки).
       const marked = new Set(
@@ -770,13 +783,16 @@ function bindInnerHandlers() {
         // которые отмечены галочками в ЕГО СОБСТВЕННОЙ строке (если такая
         // строка ещё есть среди других); иначе прежний вид убирается.
         const ownRowStillExists = [...controlsWrap().querySelectorAll("[data-ctrl-row]")]
-          .filter((r) => r !== tr && Number(r.dataset.ctId) === prevCtId)[0];
+          .filter((r) => r !== tr && Number(r.dataset.prevCtId) === prevCtId)[0];
         if (!ownRowStillExists) delete controlState[prevCtId];
       }
 
       if (ctId) {
-        if (marked.size) controlState[ctId] = marked;
-        else delete controlState[ctId]; // вид без галочек не сохраняется
+        // Вид без галочек тоже остаётся в списке строк (controlState с
+        // пустым набором) — иначе строка исчезала сразу после выбора и
+        // семестры нельзя было отметить. При сохранении такие строки
+        // просто не пишутся в БД.
+        controlState[ctId] = marked;
       }
       renderControls();
       setStatus("Есть несохранённые изменения в контроле.");
