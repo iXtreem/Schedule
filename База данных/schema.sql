@@ -99,12 +99,32 @@ CREATE TABLE IF NOT EXISTS room (
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
 -- Типы занятий (лекция, практика, лаборатория...) ---------------------
+-- ЕДИНЫЙ ИСТОЧНИК ПРАВДЫ для окна «📚 Учебный план»: виды учебной
+-- деятельности (activity_kind) и виды контроля по семестрам (control_type)
+-- — это зеркало данного справочника (синхронизация: syncKindsWithLessonTypes /
+-- syncControlsWithLessonTypes в backend/modules/curriculum/curriculum.repo.php).
+-- В карточках плана выбрать можно ТОЛЬКО тип, добавленный здесь;
+-- названия в плане всегда ПОЛНЫЕ (name).
 CREATE TABLE IF NOT EXISTS lesson_type (
   id         INT NOT NULL AUTO_INCREMENT PRIMARY KEY,
   name       VARCHAR(60) NULL,                 -- полное название
   short_name VARCHAR(20) NULL,                 -- сокращение (Лек, Прак, Лаб)
   is_deleted TINYINT(1) NOT NULL DEFAULT 0
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+-- Базовые типы занятий (идемпотентно): гарантируют, что даже при запуске
+-- без demo_data.sql справочник не пуст и в карточках плана есть что выбрать.
+INSERT IGNORE INTO lesson_type (name, short_name) VALUES
+ ('Лекция',                'Лек'),
+ ('Практическое занятие',  'Прак'),
+ ('Лабораторная работа',   'Лаб'),
+ ('Семинарское занятие',   'Сем'),
+ ('Экзамен',               'Экз'),
+ ('Дифференцированный зачет', 'ДифЗач'),
+ ('Зачет',                 'Зач'),
+ ('Курсовой проект',       'КурПр'),
+ ('Курсовая работа',       'КурРа'),
+ ('Самостоятельная работа','СР');
 
 -- Учебные недели -------------------------------------------------------
 CREATE TABLE IF NOT EXISTS week (
