@@ -212,11 +212,24 @@ function currUiCard(mysqli $planConn, int $id): array {
       'hours'          => (float)$h['hours'],
     ];
   }
+  // Названия видов контроля подтягиваем из control_type: карточка всегда
+  // показывает ПОЛНОЕ название типа занятия из справочника «Типы занятий»
+  // (даже если запись в БД осталась от старого свободного ввода).
+  $ctNames = [];
+  foreach (repoCurrControlTypes($planConn) as $ct) {
+    $ctNames[(int)$ct['id']] = (string)$ct['name'];
+  }
   $ctrl = [];
   foreach (($card['controls'] ?? []) as $c) {
     $ctId = (int)$c['control_type_id'];
     $t    = (int)$c['term'];
-    if (!isset($ctrl[$ctId])) $ctrl[$ctId] = ['controlTypeId' => $ctId, 'terms' => []];
+    if (!isset($ctrl[$ctId])) {
+      $ctrl[$ctId] = [
+        'controlTypeId' => $ctId,
+        'name'          => $ctNames[$ctId] ?? '',
+        'terms'         => [],
+      ];
+    }
     $ctrl[$ctId]['terms'][] = $t;
   }
   return [
