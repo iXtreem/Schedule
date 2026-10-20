@@ -600,6 +600,21 @@ function repoCurrReplaceHours(mysqli $conn, int $curriculumId, $hours): void {
   $ch = planTab('curriculum_hours');
   if (!is_array($hours)) return;
 
+  /* ЖЁСТКОЕ ТРЕБОВАНИЕ: «Распределение трудоемкости по видам деятельности»
+   * связано со справочником «Типы занятий» (lesson_type основной БД).
+   * Разрешены ТОЛЬКО живые виды activity_kind с заполненной связкой
+   * lesson_type_id. Перед проверкой зеркало синхронизируется со справочником
+   * (лениво), поэтому только что созданный тип занятия сразу доступен. */
+  try { syncKindsWithLessonTypes($conn, getDBConnection()); }
+  catch (Throwable $e) { error_log('syncKindsWithLessonTypes skipped: ' . $e->getMessage()); }
+
+  $allowedKinds = [];
+  foreach (dbAll($conn,
+      "SELECT id FROM {" . planTab('activity_kind') . "}
+       WHERE is_deleted = 0 AND lesson_type_id IS NOT NULL") as $r) {
+    $allowedKinds[(int)$r['id']] = true;
+  }
+
   dbExec($conn, "DELETE FROM {$ch} WHERE curriculum_id = ?", [$curriculumId]);
 
   $allGroups = null; // ленивая выборка всех групп (для общей строки часов)
@@ -607,6 +622,13 @@ function repoCurrReplaceHours(mysqli $conn, int $curriculumId, $hours): void {
   foreach ($hours as $row) {
     $kindId = (int)($row['activity_kind_id'] ?? $row['activityKindId'] ?? 0);
     if ($kindId <= 0) continue;
+    if (!isset($allowedKinds[$kindId])) {
+      throw new Exception(
+        'Вид учебной деятельности №' . $kindId . ' отсутствует в справочнике «Типы занятий». '
+        . 'Добавьте тип занятия в «Справочники → Типы занятий» — вид деятельности '
+        . 'появится в плане автоматически.'
+      );
+    }
     $h = (float)($row['hours'] ?? 0);
     if ($h < 0) $h = 0;
 
