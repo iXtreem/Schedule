@@ -159,10 +159,40 @@ function syncKindsWithLessonTypes(mysqli $planConn, mysqli $mainConn): void {
       [$ltId, $name, $short, $name]);
     if ($bound > 0) continue;
 
-    // 4) создать новый вид-зеркало
-    dbExec($planConn,
-      "INSERT INTO {$t} (name, short_name, lesson_type_id, sort_order) VALUES (?, ?, ?, 0)",
-      [$name, $short, $ltId]);
+    // 4a) в зеркале уже ЖИВАЯ строка с таким именем, но привязанная к ДРУГОМУ
+    // типу занятия (в справочнике допустимы одноимённые типы) — не создаём
+    // дубль (UNIQUE name), а добавляем id типа к первому совпадению.
+    $otherName = dbAll($planConn,
+      "SELECT id, lesson_type_id FROM {$t}
+        WHERE name = ? AND is_deleted = 0 AND lesson_type_id IS NOT NULL
+          AND lesson_type_id <> ? LIMIT 1",
+      [$name, $ltId]);
+    if ($otherName) {
+      dbExec($planConn,
+        "UPDATE {$t} SET lesson_type_id = CONCAT(lesson_type_id, ',', ?) WHERE id = ?",
+        [$ltId, (int)$otherName[0]['id']]);
+      continue;
+    }
+
+    // 4b) создать новый вид-зеркало
+    try {
+      dbExec($planConn,
+        "INSERT INTO {$t} (name, short_name, lesson_type_id, sort_order) VALUES (?, ?, ?, 0)",
+        [$name, $short, $ltId]);
+    } catch (Throwable $e) {
+      // гонка/дубль по UNIQUE(name) — привязываем существующую живую строку
+      // (или воскресаем удалённую без связи), чтобы синхронизация не падала.
+      $bound2 = dbExec($planConn,
+        "UPDATE {$t} SET lesson_type_id = ? WHERE name = ? AND is_deleted = 0
+           AND lesson_type_id IS NULL LIMIT 1",
+        [$ltId, $name]);
+      if ($bound2 === 0) {
+        dbExec($planConn,
+          "UPDATE {$t} SET is_deleted = 0, lesson_type_id = ?
+            WHERE name = ? AND lesson_type_id IS NULL ORDER BY id LIMIT 1",
+          [$ltId, $name]);
+      }
+    }
   }
 
   // Виды, привязанные к удалённому/несуществующему типу — выключить.
