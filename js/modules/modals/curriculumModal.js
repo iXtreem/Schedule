@@ -418,8 +418,10 @@ function selectedControlIds(skipId = null) {
   return ids;
 }
 
-// Строка вида контроля: выпадающий список (полные названия из справочника)
-// + чекбоксы семестров. Пустой выбор = вид контроля не задан.
+// Строка вида контроля: выпадающий список (ТОЛЬКО полные названия из
+// справочника «Типы занятий») + галочки (чекбоксы) семестров 1..8, как было
+// раньше. Отмеченные галочками семестры записываются в БД при сохранении.
+// Пустой выбор вида = строка служит «добавить вид».
 function ctrlRowHtml(row, idx) {
   const used = selectedControlIds(row.ctId);
   const set = (row.ctId && controlState[row.ctId]) || new Set();
@@ -435,34 +437,36 @@ function ctrlRowHtml(row, idx) {
       )
       .join("");
 
-  const termOptions = Array.from({ length: MAX_TERMS }, (_, i) => i + 1)
+  // Галочки семестров 1..8 — всегда видны и доступны для выбора.
+  const termBoxes = Array.from({ length: MAX_TERMS }, (_, i) => i + 1)
     .map(
       (t) =>
-        `<option value="${t}"${set.has(t) ? " selected" : ""}>Семестр ${t}</option>`
+        `<label class="curr-ctrl-term"><input type="checkbox"` +
+        ` data-ctrl-row="${idx}" data-ctrl-term="${t}"` +
+        `${set.has(t) ? " checked" : ""}/>${t}</label>`
     )
     .join("");
 
   return (
-    `<div class="curr-ctrl-row" data-ctrl-row="${idx}" data-prev-ct-id="${row.ctId ?? ""}">` +
+    `<div class="curr-ctrl-row" data-ctrl-row="${idx}" data-ct-id="${row.ctId ?? ""}">` +
     `<select class="select curr-ctrl-select" data-ctrl-select="${idx}">` +
     `${options}</select>` +
-    `<select class="select curr-ctrl-term-select" data-ctrl-term-add="${idx}"` +
-    `${row.ctId ? "" : " disabled"}>` +
-    `<option value="">＋ семестр…</option>${termOptions}</select>` +
-    `<span class="curr-ctrl-terms">` +
-    [...set]
-      .sort((a, b) => a - b)
-      .map(
-        (t) =>
-          `<label class="curr-ctrl-term"><input type="checkbox"` +
-          ` data-ctrl-type="${row.ctId}" data-ctrl-term="${t}" checked/> ${t}</label>`
-      )
-      .join("") +
-    `</span>` +
+    `<span class="curr-ctrl-terms">${termBoxes}</span>` +
     `<button class="btn btn-outline curr-danger-btn" data-ctrl-clear="${idx}"` +
-    ` type="button" title="Очистить семестры этого вида">✕</button>` +
+    ` type="button" title="Очистить строку">✕</button>` +
     `</div>`
   );
+}
+
+// Строки вида контроля: [все виды с непустым набором семестров] + 1 пустая.
+function ctrlRows() {
+  const rows = [];
+  for (const ct of meta.controlTypes) {
+    const set = controlState[ct.id];
+    if (set && set.size > 0) rows.push({ ctId: ct.id });
+  }
+  rows.push({ ctId: null }); // пустая строка «＋ добавить вид»
+  return rows;
 }
 
 function renderControls() {
@@ -472,23 +476,13 @@ function renderControls() {
     return;
   }
 
-  // Строки = все виды с отмеченными семестрами (порядок — как в справочнике).
-  const rows = [];
-  for (const ct of meta.controlTypes) {
-    const set = controlState[ct.id];
-    if (set && set.size > 0) rows.push({ ctId: ct.id });
-  }
-  // Одна пустая строка для добавления нового вида (если есть что выбирать).
-  if (meta.controlTypes.length > 0) rows.push({ ctId: null });
-
   const hint = meta.controlTypes.length
     ? `<div class="curr-ctrl-hint muted">Виды контроля берутся из справочника` +
-      ` «Справочники → Типы занятий» (только полные названия).</div>`
+      ` «Справочники → Типы занятий» (только полные названия). Отметьте галочками семестры 1–8.</div>`
     : `<div class="curr-ctrl-hint muted">В справочнике «Типы занятий» нет ни одного` +
       ` типа — добавьте тип занятия, и он появится здесь автоматически.</div>`;
 
-  controlsWrap().innerHTML =
-    hint + rows.map(ctrlRowHtml).join("") + (rows.length > 1 ? "" : "");
+  controlsWrap().innerHTML = hint + ctrlRows().map(ctrlRowHtml).join("");
 }
 
 async function saveCard() {
@@ -714,80 +708,69 @@ function bindInnerHandlers() {
     renderHoursTable();
   });
 
-  // редактор контроля: выбор вида из справочника + семестры.
-  // Строки перерисовываются по событию change (выбор вида/семестра, ✕),
-  // снятие отметки с уже выбранного семестра — без перерисовки (чекбокс).
+  // Редактор контроля: выбор вида из справочника + ГАЛОЧКИ семестров 1..8.
+  // Строка = {вид, отмеченные семестры}; значения пишутся в БД при
+  // сохранении карточки (saveCard → controls[].terms).
 
   // Выбор вида контроля (только полные названия из «Типы занятий»)
   controlsWrap()?.addEventListener("change", (e) => {
     const sel = e.target.closest("[data-ctrl-select]");
     if (sel) {
-      const idx = Number(sel.dataset.ctrlSelect);
       const tr = sel.closest("[data-ctrl-row]");
-      const addSel = tr?.querySelector("[data-ctrl-term-add]");
       const ctId = Number(sel.value) || null;
+      const prevCtId = Number(tr?.dataset.ctId || 0);
 
-      if (!ctId) {
-        // Вернулись к «— вид контроля —»: строка очищается.
-        for (const [id, set] of Object.entries(controlState)) {
-          if (Number(id) === Number(sel.dataset.prevCtId ?? "") ) set.clear();
-        }
-        renderControls();
-        setStatus("Есть несохранённые изменения в контроле.");
-        return;
-      }
+      // Семестры, отмеченные галочками в этой строке (до перерисовки).
+      const marked = new Set(
+        [...(tr?.querySelectorAll("input[data-ctrl-term]:checked") || [])].map(
+          (cb) => Number(cb.dataset.ctrlTerm)
+        )
+      );
 
-      // Если до этого в строке был другой вид — переносим его семестры.
-      const prevCtId = Number(tr?.dataset.prevCtId || 0);
       if (prevCtId && prevCtId !== ctId) {
-        controlState[ctId] = controlState[prevCtId] || new Set();
-        if (controlState[prevCtId]) controlState[prevCtId].clear();
-      } else if (!controlState[ctId]) {
-        controlState[ctId] = new Set();
+        // Меняем вид в строке: прежнему виду остаются только те семестры,
+        // которые отмечены галочками в ЕГО СОБСТВЕННОЙ строке (если такая
+        // строка ещё есть среди других); иначе прежний вид убирается.
+        const ownRowStillExists = [...controlsWrap().querySelectorAll("[data-ctrl-row]")]
+          .filter((r) => r !== tr && Number(r.dataset.ctId) === prevCtId)[0];
+        if (!ownRowStillExists) delete controlState[prevCtId];
       }
 
-      // Семестр из соседнего выпадающего списка («＋ семестр…»), если выбран.
-      const pendingTerm = Number(addSel?.value || 0);
-      if (pendingTerm >= 1 && pendingTerm <= MAX_TERMS) {
-        controlState[ctId].add(pendingTerm);
+      if (ctId) {
+        if (marked.size) controlState[ctId] = marked;
+        else delete controlState[ctId]; // вид без галочек не сохраняется
       }
       renderControls();
       setStatus("Есть несохранённые изменения в контроле.");
       return;
     }
 
-    // Добавление семестра к выбранному виду
-    const termAdd = e.target.closest("[data-ctrl-term-add]");
-    if (termAdd) {
-      const tr = termAdd.closest("[data-ctrl-row]");
-      const ctId = Number(tr?.querySelector("[data-ctrl-select]")?.value || 0);
-      const term = Number(termAdd.value || 0);
-      if (ctId && term >= 1 && term <= MAX_TERMS) {
-        if (!controlState[ctId]) controlState[ctId] = new Set();
-        controlState[ctId].add(term);
-        renderControls();
-        setStatus("Есть несохранённые изменения в контроле.");
-      }
-      return;
-    }
-
-    // Снятие отметки с семестра (чекбокс)
-    const cb = e.target.closest("input[data-ctrl-type]");
-    if (cb && !cb.checked) {
-      const ctId = Number(cb.dataset.ctrlType);
+    // Галочка семестра (1..8): ставим/снимаем отметку, значения пишутся в БД
+    // при сохранении карточки (saveCard → controls[].terms).
+    const cb = e.target.closest("input[data-ctrl-term]");
+    if (cb) {
+      const tr = cb.closest("[data-ctrl-row]");
+      const ctId = Number(tr?.dataset.ctId || 0);
       const term = Number(cb.dataset.ctrlTerm);
-      controlState[ctId]?.delete(term);
-      renderControls();
+      if (!ctId) {
+        // Вид ещё не выбран — сначала выберите вид контроля.
+        cb.checked = false;
+        setStatus("Сначала выберите вид контроля из справочника.");
+        return;
+      }
+      if (!controlState[ctId]) controlState[ctId] = new Set();
+      if (cb.checked) controlState[ctId].add(term);
+      else controlState[ctId].delete(term);
       setStatus("Есть несохранённые изменения в контроле.");
     }
   });
 
-  // ✕ — очистить все семестры вида (строка станет пустой)
+  // ✕ — очистить строку (вид контроля и его семестры)
   controlsWrap()?.addEventListener("click", (e) => {
     const clear = e.target.closest("[data-ctrl-clear]");
     if (!clear) return;
     const tr = clear.closest("[data-ctrl-row]");
-    const ctId = Number(tr?.querySelector("[data-ctrl-select]")?.value || 0);
+    const ctId = Number(tr?.dataset.ctId || 0);
     if (ctId && controlState[ctId]) controlState[ctId].clear();
     renderControls();
     setStatus("Есть несохранённые изменения в контроле.");
