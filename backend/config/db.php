@@ -103,6 +103,7 @@ function planDB(mysqli $conn): mysqli {
     // Таблицы живут в основной базе: имена — через глобальный префикс plan_.
     planSetMode('prefix');
     if (!$schemaDone) {
+      planSeedLessonTypes($conn); // справочник «Типы занятий» должен быть заполнен ДО синхронизации зеркал
       planCreateSchema($conn, 'plan_');
       planMigrateActivityKind($conn, 'plan_');
       planMigrateControlType($conn, 'plan_');
@@ -127,6 +128,7 @@ function planDB(mysqli $conn): mysqli {
 
   planSetMode('separate');
   if (!$schemaDone) {
+    planSeedLessonTypes($conn); // справочник «Типы занятий» должен быть заполнен ДО синхронизации зеркал
     planCreateSchema($planConn, '');
     planMigrateActivityKind($planConn, '');
     planMigrateControlType($planConn, '');
@@ -134,6 +136,48 @@ function planDB(mysqli $conn): mysqli {
     $schemaDone = true;
   }
   return $planConn;
+}
+
+/* ==========================================================================
+ * Автозаполнение справочника «Типы занятий» (lesson_type основной базы).
+ * --------------------------------------------------------------------------
+ * Это ЕДИНЫЙ ИСТОЧНИК ПРАВДЫ для «Вид деятельности» и «Вид контроля по
+ * семестрам» в учебном плане: activity_kind/control_type — его зеркала.
+ * Если справочник пуст (например, база создана импортом schema.sql без
+ * seed-строк lesson_type), при первой инициализации программы он заполняется
+ * стандартными типами занятий колледжа — иначе в карточке плана список видов
+ * был бы пуст или состоял из устаревших фиксированных строк («Лекции»).
+ * Идемпотентно: INSERT IGNORE по UNIQUE(name), существующие записи не трогает.
+ * ========================================================================== */
+function planSeedLessonTypes(mysqli $conn): void {
+  static $done = false;
+  if ($done) return;
+  $done = true;
+  try {
+    if (!dbTableExists($conn, 'lesson_type')) return; // создастся из schema.sql
+    $types = [
+      ['Лекция',                'Лек'],
+      ['Практическое занятие',  'Пр'],
+      ['Лабораторная работа',   'Лр'],
+      ['Самостоятельная работа','Ср'],
+      ['Консультация',          'Конс'],
+      ['Экзамен',               'Экз'],
+      ['Дифференцированный зачет', 'Дз'],
+      ['Зачет',                 'Зч'],
+      ['Курсовой проект',       'КП'],
+      ['Курсовая работа',       'КР'],
+    ];
+    foreach ($types as [$name, $short]) {
+      $stmt = $conn->prepare(
+        "INSERT IGNORE INTO lesson_type (name, short_name, is_deleted) VALUES (?, ?, 0)"
+      );
+      $stmt->bind_param('ss', $name, $short);
+      $stmt->execute();
+      $stmt->close();
+    }
+  } catch (Throwable $e) {
+    error_log('planSeedLessonTypes: ' . $e->getMessage());
+  }
 }
 
 // Идемпотентная миграция таблицы activity_kind для СУЩЕСТВУЮЩИХ баз:

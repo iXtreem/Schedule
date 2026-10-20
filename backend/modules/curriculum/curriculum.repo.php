@@ -145,15 +145,22 @@ function repoCurrActivityKinds(mysqli $conn): array {
        AND ak.id > (SELECT MIN(a2.id) FROM (SELECT * FROM {$t}) a2
                      WHERE a2.is_deleted = 0
                        AND a2.lesson_type_id = ak.lesson_type_id)");
-  return dbAll($conn, "SELECT id, name, short_name, sort_order, lesson_type_id FROM {$t} ak
-                      WHERE ak.is_deleted = 0
-                        AND ak.lesson_type_id IS NOT NULL
-                        AND ak.lesson_type_id NOT LIKE '%,%'
-                        AND CAST(ak.lesson_type_id AS CHAR) REGEXP '^[0-9]+$'
-                        AND EXISTS (SELECT 1 FROM {$mp}lesson_type lt
-                                     WHERE lt.id = CAST(ak.lesson_type_id AS UNSIGNED)
-                                       AND lt.is_deleted = 0)
-                      ORDER BY ak.sort_order, ak.name");
+  // ЖЁСТКАЯ ПРИВЯЗКА К СПРАВОЧНИКУ: список строится ПРЯМО из живой таблицы
+  // lesson_type («Справочники → Типы занятий») — ровно по одному пункту на
+  // тип занятия, названия ПОЛНЫЕ и точь-в-точь как в справочнике. Зеркало
+  // activity_kind даёт только id вида (для уже сохранённых часов), поэтому
+  // старые/фиксированные строки («Лекции» без связи) или дубли в список не
+  // попадают никогда — даже если синхронизация зеркал не успела выполниться.
+  return dbAll($conn, "SELECT ak.id, lt.name AS name, lt.short_name AS short_name,
+                              ak.sort_order, lt.id AS lesson_type_id
+                      FROM {$mp}lesson_type lt
+                      JOIN {$t} ak
+                        ON ak.lesson_type_id = lt.id AND ak.is_deleted = 0
+                       AND ak.id = (SELECT MIN(a2.id) FROM {$t} a2
+                                     WHERE a2.is_deleted = 0
+                                       AND a2.lesson_type_id = lt.id)
+                      WHERE lt.is_deleted = 0
+                      ORDER BY lt.name");
 }
 
 /*
@@ -367,12 +374,22 @@ function repoCurrControlTypes(mysqli $conn): array {
        AND ct.id > (SELECT MIN(c2.id) FROM (SELECT * FROM {$t}) c2
                      WHERE c2.is_deleted = 0
                        AND c2.lesson_type_id = ct.lesson_type_id)");
-  return dbAll($conn, "SELECT ct.id, ct.name, ct.sort_order, ct.lesson_type_id FROM {$t} ct
-                      WHERE ct.is_deleted = 0
-                        AND ct.lesson_type_id IS NOT NULL
-                        AND EXISTS (SELECT 1 FROM {$mp}lesson_type lt
-                                     WHERE lt.id = ct.lesson_type_id AND lt.is_deleted = 0)
-                      ORDER BY ct.sort_order, ct.name");
+  // ЖЁСТКАЯ ПРИВЯЗКА К СПРАВОЧНИКУ: список строится ПРЯМО из живой таблицы
+  // lesson_type («Справочники → Типы занятий») — ровно по одному пункту на
+  // тип занятия, названия ПОЛНЫЕ и точь-в-точь как в справочнике. Зеркало
+  // control_type даёт только id вида (для уже сохранённых отметок), поэтому
+  // старые/фиксированные строки без связи или дубли в список не попадают
+  // никогда — даже если синхронизация зеркал не успела выполниться.
+  return dbAll($conn, "SELECT ct.id, lt.name AS name, ct.sort_order,
+                              lt.id AS lesson_type_id
+                      FROM {$mp}lesson_type lt
+                      JOIN {$t} ct
+                        ON ct.lesson_type_id = lt.id AND ct.is_deleted = 0
+                       AND ct.id = (SELECT MIN(c2.id) FROM {$t} c2
+                                     WHERE c2.is_deleted = 0
+                                       AND c2.lesson_type_id = lt.id)
+                      WHERE lt.is_deleted = 0
+                      ORDER BY lt.name");
 }
 
 function repoCurrControlTypeSave(mysqli $conn, ?int $id, $body): int {

@@ -804,7 +804,17 @@ function bindInnerHandlers() {
     const cb = e.target.closest("input[data-ctrl-term]");
     if (cb) {
       const tr = cb.closest("[data-ctrl-row]");
-      const ctId = Number(tr?.dataset.ctId || 0);
+      // Вид контроля в строке берём из САМОГО СВЕЖЕГО источника: value
+      // текущего select (пользователь мог выбрать вид и ещё не пересохранить),
+      // затем data-prev-ct-id / data-ct-id. Раньше читался только data-ct-id,
+      // который заполняется лишь для сохранённых видов — поэтому при клике по
+      // галочке программа писала «Сначала выберите вид контроля», хотя вид
+      // уже был выбран в списке.
+      const sel = tr?.querySelector("select[data-ctrl-select]");
+      const ctId =
+        Number(sel?.value || 0) ||
+        Number(tr?.dataset.prevCtId || 0) ||
+        Number(tr?.dataset.ctId || 0);
       const term = Number(cb.dataset.ctrlTerm);
       if (!ctId) {
         // Вид ещё не выбран — сначала выберите вид контроля.
@@ -815,6 +825,12 @@ function bindInnerHandlers() {
       if (!controlState[ctId]) controlState[ctId] = new Set();
       if (cb.checked) controlState[ctId].add(term);
       else controlState[ctId].delete(term);
+      // Запоминаем вид в строке — теперь галочки других семестров этой же
+      // строки будут работать без повторного выбора вида.
+      if (tr) {
+        tr.dataset.prevCtId = String(ctId);
+        tr.dataset.ctId = String(ctId);
+      }
       setStatus("Есть несохранённые изменения в контроле.");
     }
   });
