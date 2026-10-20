@@ -7,7 +7,7 @@
 $serverName = "localhost";     // XAMPP: MySQL доступен по localhost
 $database   = "uchetlfpstu";   // Имя базы данных (схема: База данных/schema.sql)
 $username   = "root";          // Стандартный пользователь XAMPP
-$password   = "testpass";              // В XAMPP пароль root по умолчанию пустой
+$password   = "";              // В XAMPP пароль root по умолчанию пустой
 
 // Отдельная база «Учебный план» (модуль backend/modules/curriculum).
 // Создаётся автоматически при первом запуске; если прав на CREATE DATABASE
