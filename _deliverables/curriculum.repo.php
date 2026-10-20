@@ -133,7 +133,18 @@ function repoCurrActivityKinds(mysqli $conn): array {
   // Условие NOT LIKE '%,%' — защита от «странного» вывода исторических
   // множественных связей ("3,7"): такие строки сначала расщепляются
   // функцией repoCurrExplodeMultiKindLinks() (вызывается синхронизацией).
-  // устаревшие строки вида «Лекции» без связи с типом занятий не показываем
+  // устаревшие строки вида «Лекции» без связи с типом занятий не показываем.
+  // Отвязываем «мёртвые» дубли: если живых зеркал одного типа несколько
+  // (последствие старых склеек id), оставляем одно с минимальным id — иначе
+  // в списке видов деятельности появляются одинаковые названия.
+  dbExec($conn,
+    "UPDATE {$t} ak
+       SET ak.lesson_type_id = NULL
+     WHERE ak.is_deleted = 0
+       AND ak.lesson_type_id IS NOT NULL
+       AND ak.id > (SELECT MIN(a2.id) FROM (SELECT * FROM {$t}) a2
+                     WHERE a2.is_deleted = 0
+                       AND a2.lesson_type_id = ak.lesson_type_id)");
   return dbAll($conn, "SELECT id, name, short_name, sort_order, lesson_type_id FROM {$t} ak
                       WHERE ak.is_deleted = 0
                         AND ak.lesson_type_id IS NOT NULL
@@ -344,6 +355,18 @@ function repoCurrControlTypes(mysqli $conn): array {
   // Зеркало справочника «Типы занятий»: в списке только виды контроля,
   // реально привязанные к живому типу занятия (lesson_type_id). Фиксированные
   // дефолтные строки без связи не видны до синхронизации.
+  // Дополнительно отвязываем «мёртвые» дубли: если живых зеркал одного типа
+  // несколько (последствие старых склеек id), оставляем одно с минимальным id —
+  // иначе в выпадающем списке появляются одинаковые названия и выбор
+  // «сбрасывается» при перерисовке строк.
+  dbExec($conn,
+    "UPDATE {$t} ct
+       SET ct.lesson_type_id = NULL
+     WHERE ct.is_deleted = 0
+       AND ct.lesson_type_id IS NOT NULL
+       AND ct.id > (SELECT MIN(c2.id) FROM (SELECT * FROM {$t}) c2
+                     WHERE c2.is_deleted = 0
+                       AND c2.lesson_type_id = ct.lesson_type_id)");
   return dbAll($conn, "SELECT ct.id, ct.name, ct.sort_order, ct.lesson_type_id FROM {$t} ct
                       WHERE ct.is_deleted = 0
                         AND ct.lesson_type_id IS NOT NULL
