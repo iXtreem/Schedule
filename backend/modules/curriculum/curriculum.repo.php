@@ -56,15 +56,87 @@ function repoCurrDepartmentDelete(mysqli $conn, int $id): void {
 
 // -- Виды учебной деятельности --------------------------------------------------
 
+/*
+ * Активация связей «вид -> тип занятия» для строк с множественной связкой
+ * (исторические данные вида lesson_type_id = "3,7"). Разбиваем строку на
+ * отдельные зеркальные виды по одному типу занятия — иначе в выпадающем
+ * списке отображалось «странное» значение "3,7" вместо полного названия.
+ */
+function repoCurrExplodeMultiKindLinks(mysqli $conn): void {
+  $t  = planTab('activity_kind');
+  $mp = currMainPrefix();
+
+  $multi = dbAll($conn,
+    "SELECT id, name, short_name, sort_order, lesson_type_id FROM {$t}
+      WHERE is_deleted = 0 AND lesson_type_id LIKE '%,%'");
+  if (!$multi) return;
+
+  foreach ($multi as $row) {
+    $ids = array_values(array_filter(array_map('intval', explode(',', (string)$row['lesson_type_id'])),
+                                    static fn($v) => $v > 0));
+    if (count($ids) < 2) { // "3," или мусор — чиним скалярным значением
+      $single = $ids ? (int)$ids[0] : null;
+      dbExec($conn, "UPDATE {$t} SET lesson_type_id = ? WHERE id = ?", [$single, (int)$row['id']]);
+      continue;
+    }
+
+    $baseName = trim((string)$row['name']);
+    $short    = trim((string)($row['short_name'] ?? '')) ?: null;
+    $sort     = (int)$row['sort_order'];
+
+    // Первый тип занятия остаётся на исходной строке.
+    dbExec($conn, "UPDATE {$t} SET lesson_type_id = ? WHERE id = ?",
+      [(int)$ids[0], (int)$row['id']]);
+
+    // Остальные типы — отдельные живые строки-зеркала (по одному связь-айди),
+    // названия берём ПОЛНЫЕ из справочника «Типы занятий».
+    for ($i = 1; $i < count($ids); $i++) {
+      $ltId = (int)$ids[$i];
+      $name = (string)dbScalar($conn,
+        "SELECT name FROM {$mp}lesson_type WHERE id = ? AND is_deleted = 0",
+        [$ltId], null) ?: ($baseName . ' #' . $ltId);
+
+      // уже есть живой вид, привязанный к этому типу — дубликат не нужен
+      $linked = (int)dbScalar($conn,
+        "SELECT COUNT(*) FROM {$t} WHERE lesson_type_id = ? AND is_deleted = 0",
+        [$ltId], 0);
+      if ($linked > 0) continue;
+
+      // ранее удалённое зеркало этого типа — воскресаем (часы не теряются)
+      $revived = dbExec($conn,
+        "UPDATE {$t} SET is_deleted = 0, name = ?, short_name = ?, lesson_type_id = ?
+          WHERE lesson_type_id = ? LIMIT 1",
+        [$name, $short, $ltId, $ltId]);
+      if ($revived > 0) continue;
+
+      try {
+        dbExec($conn,
+          "INSERT INTO {$t} (name, short_name, lesson_type_id, sort_order) VALUES (?, ?, ?, ?)",
+          [$name, $short, $ltId, $sort]);
+      } catch (Throwable $e) {
+        // имя занято другой живой строкой без связи — привязываем её к типу
+        dbExec($conn,
+          "UPDATE {$t} SET lesson_type_id = ? WHERE name = ? AND is_deleted = 0
+             AND lesson_type_id IS NULL LIMIT 1",
+          [$ltId, $name]);
+      }
+    }
+  }
+}
+
 function repoCurrActivityKinds(mysqli $conn): array {
   $t  = planTab('activity_kind');
   $mp = currMainPrefix();
   // Зеркало справочника «Типы занятий»: показываем только виды, реально
   // привязанные к живому типу занятия (lesson_type_id). Старые фиксированные
   // строки без связи не видны в программе до синхронизации.
+  // Условие NOT LIKE '%,%' — защита от «странного» вывода исторических
+  // множественных связей ("3,7"): такие строки сначала расщепляются
+  // функцией repoCurrExplodeMultiKindLinks() (вызывается синхронизацией).
   return dbAll($conn, "SELECT id, name, short_name, sort_order, lesson_type_id FROM {$t} ak
                       WHERE ak.is_deleted = 0
                         AND ak.lesson_type_id IS NOT NULL
+                        AND ak.lesson_type_id NOT LIKE '%,%'
                         AND EXISTS (SELECT 1 FROM {$mp}lesson_type lt
                                      WHERE lt.id = ak.lesson_type_id AND lt.is_deleted = 0)
                       ORDER BY ak.sort_order, ak.name");
@@ -133,6 +205,10 @@ function syncKindsWithLessonTypes(mysqli $planConn, mysqli $mainConn): void {
   $t  = planTab('activity_kind');
   $mp = currMainPrefix();
 
+  // Сначала чиним исторические множественные связи ("3,7") — расщепляем их
+  // на отдельные виды-зеркала, чтобы в списке не было «странных» значений.
+  repoCurrExplodeMultiKindLinks($planConn);
+
   $types = dbAll($mainConn,
     "SELECT id, name, short_name FROM {$mp}lesson_type
       WHERE is_deleted = 0 ORDER BY id");
@@ -168,17 +244,26 @@ function syncKindsWithLessonTypes(mysqli $planConn, mysqli $mainConn): void {
     if ($bound > 0) continue;
 
     // 4a) в зеркале уже ЖИВАЯ строка с таким именем, но привязанная к ДРУГОМУ
-    // типу занятия (в справочнике допустимы одноимённые типы) — не создаём
-    // дубль (UNIQUE name), а добавляем id типа к первому совпадению.
+    // типу занятия (в справочнике допустимы одноимённые типы) — дубль по
+    // UNIQUE(name) создать нельзя. Множественные связи вида "3,7" раньше
+    // ломали вывод списка («странные» значения), поэтому вместо склейки:
+    // воскрешаем ранее удалённое зеркало этого типа, а если его нет —
+    // отвязываем старую строку (тип в справочнике уникален по имени).
     $otherName = dbAll($planConn,
       "SELECT id, lesson_type_id FROM {$t}
         WHERE name = ? AND is_deleted = 0 AND lesson_type_id IS NOT NULL
-          AND lesson_type_id <> ? LIMIT 1",
+          AND lesson_type_id <> ? AND lesson_type_id NOT LIKE '%,%' LIMIT 1",
       [$name, $ltId]);
     if ($otherName) {
-      dbExec($planConn,
-        "UPDATE {$t} SET lesson_type_id = CONCAT(lesson_type_id, ',', ?) WHERE id = ?",
-        [$ltId, (int)$otherName[0]['id']]);
+      $revivedDup = dbExec($planConn,
+        "UPDATE {$t} SET is_deleted = 0, name = ?, short_name = ?, lesson_type_id = ?
+          WHERE lesson_type_id = ? AND is_deleted = 1 LIMIT 1",
+        [$name, $short, $ltId, $ltId]);
+      if ($revivedDup === 0) {
+        dbExec($planConn,
+          "UPDATE {$t} SET lesson_type_id = NULL WHERE id = ?",
+          [(int)$otherName[0]['id']]);
+      }
       continue;
     }
 
@@ -209,6 +294,7 @@ function syncKindsWithLessonTypes(mysqli $planConn, mysqli $mainConn): void {
        SET ak.is_deleted = 1
      WHERE ak.is_deleted = 0
        AND ak.lesson_type_id IS NOT NULL
+       AND ak.lesson_type_id NOT LIKE '%,%'
        AND NOT EXISTS (SELECT 1 FROM {$mp}lesson_type lt
                         WHERE lt.id = ak.lesson_type_id AND lt.is_deleted = 0)");
 
@@ -611,7 +697,8 @@ function repoCurrReplaceHours(mysqli $conn, int $curriculumId, $hours): void {
   $allowedKinds = [];
   foreach (dbAll($conn,
       "SELECT id FROM {" . planTab('activity_kind') . "}
-       WHERE is_deleted = 0 AND lesson_type_id IS NOT NULL") as $r) {
+       WHERE is_deleted = 0 AND lesson_type_id IS NOT NULL
+         AND lesson_type_id NOT LIKE '%,%'") as $r) {
     $allowedKinds[(int)$r['id']] = true;
   }
 
