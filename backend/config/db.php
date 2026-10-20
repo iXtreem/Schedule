@@ -283,13 +283,22 @@ function planCreateSchema(mysqli $conn, string $prefix) {
     CONSTRAINT fk_ch_kind FOREIGN KEY (activity_kind_id) REFERENCES {$p}activity_kind (id)
   ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4");
 
+  // Зеркало справочника «Типы занятий» (lesson_type): вид контроля всегда
+  // несёт ПОЛНОЕ название типа занятия; lesson_type_id — обязательная связь
+  // для новых записей (см. syncControlsWithLessonTypes).
   $conn->query("CREATE TABLE IF NOT EXISTS {$p}control_type (
-    id         INT NOT NULL AUTO_INCREMENT PRIMARY KEY,
-    name       VARCHAR(100) NOT NULL,
-    sort_order INT NOT NULL DEFAULT 0,
-    is_deleted TINYINT(1) NOT NULL DEFAULT 0,
-    UNIQUE KEY uq_control_name (name)
+    id             INT NOT NULL AUTO_INCREMENT PRIMARY KEY,
+    name           VARCHAR(100) NOT NULL,
+    sort_order     INT NOT NULL DEFAULT 0,
+    lesson_type_id INT NULL,
+    is_deleted     TINYINT(1) NOT NULL DEFAULT 0,
+    UNIQUE KEY uq_control_name (name),
+    KEY idx_ct_lesson_type (lesson_type_id)
   ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4");
+  if (!$conn->query("ALTER TABLE {$p}control_type ADD COLUMN lesson_type_id INT NULL AFTER sort_order")) {
+    // колонка уже есть (1060 Duplicate column) или таблица ещё не создана — молча пропускаем
+  }
+  $conn->query("ALTER TABLE {$p}control_type ADD KEY idx_ct_lesson_type (lesson_type_id)");
 
   $conn->query("CREATE TABLE IF NOT EXISTS {$p}curriculum_control (
     id              INT NOT NULL AUTO_INCREMENT PRIMARY KEY,
@@ -327,6 +336,10 @@ function planFillDefaults(mysqli $conn, string $prefix) {
     $stmt->close();
   }
 
+  // Виды контроля — зеркало справочника «Типы занятий» (lesson_type).
+  // Дефолтные строки ниже используются только при первой инициализации базы;
+  // далее список полностью синхронизируется функцией
+  // syncControlsWithLessonTypes() с ПОЛНЫМИ названиями типов занятий.
   $controls = [
     ['Экзамен',                 10],
     ['Дифференцированный зачет',20],
