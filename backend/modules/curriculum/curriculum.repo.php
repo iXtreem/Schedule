@@ -178,10 +178,18 @@ function syncKindsWithLessonTypes(mysqli $planConn, mysqli $mainConn): void {
 }
 
 // -- Виды контроля ----------------------------------------------------------------
+/*
+ * Единый источник правды: «Справочники → Типы занятий» (lesson_type).
+ * control_type — зеркало справочника (как activity_kind для часов):
+ * каждое занятие является потенциальным видом контроля по семестру,
+ * поэтому список строится строго из таблицы lesson_type и синхронизируется
+ * функцией syncControlsWithLessonTypes(). Название вида контроля ВСЕГДА
+ * полное (full name) — сокращения в плане не используются.
+ */
 
 function repoCurrControlTypes(mysqli $conn): array {
   $t = planTab('control_type');
-  return dbAll($conn, "SELECT id, name, sort_order FROM {$t}
+  return dbAll($conn, "SELECT id, name, sort_order, lesson_type_id FROM {$t}
                       WHERE is_deleted = 0 ORDER BY sort_order, name");
 }
 
@@ -190,17 +198,88 @@ function repoCurrControlTypeSave(mysqli $conn, ?int $id, $body): int {
   $name = trim((string)($body['name'] ?? ''));
   if ($name === '') throw new Exception('Название вида контроля обязательно');
   $sort = (int)($body['sort_order'] ?? 0);
+  $ltid = repoCurrNormalizeLessonTypeId($conn, $body);
 
   if ($id && $id > 0) {
-    dbExec($conn, "UPDATE {$t} SET name = ?, sort_order = ? WHERE id = ?", [$name, $sort, $id]);
+    if ($ltid === -1) { // поле не прислали — связь не трогаем
+      dbExec($conn, "UPDATE {$t} SET name = ?, sort_order = ? WHERE id = ?", [$name, $sort, $id]);
+    } else {
+      dbExec($conn, "UPDATE {$t} SET name = ?, sort_order = ?, lesson_type_id = ? WHERE id = ?",
+        [$name, $sort, $ltid, $id]);
+    }
     return $id;
   }
-  return dbInsert($conn, "INSERT INTO {$t} (name, sort_order) VALUES (?, ?)", [$name, $sort]);
+  return dbInsert($conn,
+    "INSERT INTO {$t} (name, sort_order, lesson_type_id) VALUES (?, ?, ?)",
+    [$name, $sort, $ltid === -1 ? null : $ltid]);
 }
 
 function repoCurrControlTypeDelete(mysqli $conn, int $id): void {
   $t = planTab('control_type');
   dbExec($conn, "UPDATE {$t} SET is_deleted = 1 WHERE id = ?", [$id]);
+}
+
+/*
+ * Синхронизация справочника «Типы занятий» с видами контроля (зеркало,
+ * аналог syncKindsWithLessonTypes для activity_kind):
+ *   * для каждого типа занятия гарантирована живая строка control_type со
+ *     связкой lesson_type_id и ПОЛНЫМ названием типа;
+ *   * старые записи без связи привязываются по совпадению имени;
+ *   * виды контроля, привязанные к удалённому типу, выключаются (часы/семестры
+ *     curriculum_control остаются нетронутыми — запись «воскреснет», если тип
+ *     вернут из справочника).
+ * Вызывается лениво при чтении meta окна «Учебный план» и после любого CRUD
+ * в dict_lesson_types (см. crudAfterLessonTypeChange).
+ */
+function syncControlsWithLessonTypes(mysqli $planConn, mysqli $mainConn): void {
+  $t  = planTab('control_type');
+  $mp = currMainPrefix();
+
+  $types = dbAll($mainConn,
+    "SELECT id, name FROM {$mp}lesson_type WHERE is_deleted = 0 ORDER BY id");
+
+  foreach ($types as $ty) {
+    $ltId = (int)$ty['id'];
+    $name = trim((string)($ty['name'] ?? '')) ?: ('Тип #' . $ltId);
+
+    // 1) живой привязанный вид — обновляем полное имя по справочнику
+    $linked = (int)dbScalar($planConn,
+      "SELECT COUNT(*) FROM {$t} WHERE lesson_type_id = ? AND is_deleted = 0",
+      [$ltId], 0);
+    if ($linked > 0) {
+      dbExec($planConn,
+        "UPDATE {$t} SET name = ? WHERE lesson_type_id = ? AND is_deleted = 0",
+        [$name, $ltId]);
+      continue;
+    }
+
+    // 2) resurrect ранее удалённый привязанный вид (семестры не теряются)
+    $revived = dbExec($planConn,
+      "UPDATE {$t} SET is_deleted = 0, name = ? WHERE lesson_type_id = ? LIMIT 1",
+      [$name, $ltId]);
+    if ($revived > 0) continue;
+
+    // 3) живой вид с таким же именем (старые данные без связи) — привязать
+    $bound = dbExec($planConn,
+      "UPDATE {$t} SET lesson_type_id = ?, name = ?
+        WHERE name = ? AND is_deleted = 0 AND lesson_type_id IS NULL LIMIT 1",
+      [$ltId, $name, $name]);
+    if ($bound > 0) continue;
+
+    // 4) создать новый вид-зеркало
+    dbExec($planConn,
+      "INSERT INTO {$t} (name, sort_order, lesson_type_id) VALUES (?, 0, ?)",
+      [$name, $ltId]);
+  }
+
+  // Виды, привязанные к удалённому/несуществующему типу — выключить.
+  dbExec($planConn,
+    "UPDATE {$t} ct
+       SET ct.is_deleted = 1
+     WHERE ct.is_deleted = 0
+       AND ct.lesson_type_id IS NOT NULL
+       AND NOT EXISTS (SELECT 1 FROM {$mp}lesson_type lt
+                        WHERE lt.id = ct.lesson_type_id AND lt.is_deleted = 0)");
 }
 
 // -- Дисциплины учебного плана ------------------------------------------------------

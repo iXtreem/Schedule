@@ -396,6 +396,10 @@ export const api = {
       throwOnError: true,
     }),
 
+  // Вид контроля по семестрам = зеркало справочника «Типы занятий»
+  // (lesson_type). save/delete оставлены только для совместимости с
+  // внешними вызовами; сервер отвечает 409 — редактирование доступно
+  // исключительно в «Справочники → Типы занятий».
   saveCurrControlType: (payload) =>
     requestJson(`${API}?entity=curriculum_control_type`, {
       method: "POST",

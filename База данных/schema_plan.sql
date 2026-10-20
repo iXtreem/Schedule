@@ -82,12 +82,18 @@ CREATE TABLE IF NOT EXISTS curriculum_hours (
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
 -- Справочник видов контроля ---------------------------------------------------
+-- Зеркало справочника «Типы занятий» (lesson_type основной БД).
+-- Вид контроля по семестрам всегда несёт ПОЛНОЕ название типа занятия;
+-- редактирование — только через «Справочники → Типы занятий»
+-- (синхронизация: syncControlsWithLessonTypes в curriculum.repo.php).
 CREATE TABLE IF NOT EXISTS control_type (
-  id         INT NOT NULL AUTO_INCREMENT PRIMARY KEY,
-  name       VARCHAR(100) NOT NULL,            -- «Экзамен», «Диф. Зачет»...
-  sort_order INT NOT NULL DEFAULT 0,
-  is_deleted TINYINT(1) NOT NULL DEFAULT 0,
-  UNIQUE KEY uq_control_name (name)
+  id             INT NOT NULL AUTO_INCREMENT PRIMARY KEY,
+  name           VARCHAR(100) NOT NULL,            -- полное название типа занятия
+  sort_order     INT NOT NULL DEFAULT 0,
+  lesson_type_id INT NULL,                          -- связь со справочником lesson_type
+  is_deleted     TINYINT(1) NOT NULL DEFAULT 0,
+  UNIQUE KEY uq_control_name (name),
+  KEY idx_ct_lesson_type (lesson_type_id)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
 -- Вид контроля по семестрам (несколько семестров в одном пункте) --------------
@@ -114,6 +120,9 @@ INSERT IGNORE INTO activity_kind (name, short_name, sort_order) VALUES
  ('Курсовая работа',      'КурРа',70),
  ('Самостоятельная работа','СР',   80);
 
+-- Зеркало справочника «Типы занятий» (lesson_type). Дефолтные строки —
+-- только первая инициализация; далее список синхронизируется автоматически
+-- (syncControlsWithLessonTypes) и содержит ПОЛНЫЕ названия типов занятий.
 INSERT IGNORE INTO control_type (name, sort_order) VALUES
  ('Экзамен',                 10),
  ('Дифференцированный зачет',20),

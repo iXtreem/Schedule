@@ -482,36 +482,15 @@ async function reloadDepartments() {
       .join("");
 }
 
-// ---------------------------- виды деятельности / контроля (вкладка 3)
+// ------------------- виды деятельности / контроля: только через справочники
+// Вкладка-редактор удалена: activity_kind и control_type — зеркала
+// справочника «Справочники → Типы занятий» (lesson_type). Список видов
+// контроля в карточке плана всегда показывает ПОЛНЫЕ названия типов
+// занятий (renderControls читает meta.controlTypes, обновлённый сервером
+// через syncControlsWithLessonTypes). Редактирование — только в справочниках.
 
 async function reloadKinds() {
-  if (!meta) return;
-  akTable().innerHTML =
-    `<tr><th>Название</th><th>Кратко</th><th></th></tr>` +
-    meta.activityKinds
-      .map(
-        (k) => `<tr>
-          <td><input data-ak-field="name" data-ak-id="${k.id}" value="${esc(k.name)}" /></td>
-          <td><input data-ak-field="shortName" data-ak-id="${k.id}" value="${esc(k.shortName || "")}" /></td>
-          <td class="curr-row-actions">
-            <button class="btn btn-outline" data-save-ak="${k.id}" type="button">Сохранить</button>
-            <button class="btn btn-outline curr-danger-btn" data-del-ak="${k.id}" type="button">✕</button>
-          </td></tr>`
-      )
-      .join("");
-
-  ctTable().innerHTML =
-    `<tr><th>Название</th><th></th></tr>` +
-    meta.controlTypes
-      .map(
-        (c) => `<tr>
-          <td><input data-ct-field="name" data-ct-id="${c.id}" value="${esc(c.name)}" /></td>
-          <td class="curr-row-actions">
-            <button class="btn btn-outline" data-save-ct="${c.id}" type="button">Сохранить</button>
-            <button class="btn btn-outline curr-danger-btn" data-del-ct="${c.id}" type="button">✕</button>
-          </td></tr>`
-      )
-      .join("");
+  // намеренно пусто: редактирование видов перенесено в «Справочники»
 }
 
 // --------------------------------------------------- дисциплины (вкладка 4)
@@ -749,43 +728,9 @@ function bindInnerHandlers() {
     }
   });
 
-  // ---- виды контроля
-  ctAddBtn()?.addEventListener("click", () =>
-    guard(async () => {
-      const name = ctNameInput().value.trim();
-      if (!name) throw new Error("Укажите название вида контроля");
-      await api.saveCurrControlType({ name });
-      ctNameInput().value = "";
-      await Promise.all([loadMeta(true), reloadKinds(), reloadCards()]);
-      if (isFormOpen()) renderControls();
-      setStatus("Вид контроля добавлен.");
-    })
-  );
-
-  ctTable()?.addEventListener("click", (e) => {
-    const save = e.target.closest("[data-save-ct]");
-    if (save) {
-      const id = Number(save.dataset.saveCt);
-      const name = ctTable().querySelector(`[data-ct-field="name"][data-ct-id="${id}"]`)?.value.trim();
-      if (!name) return alert("Название не может быть пустым");
-      return guard(async () => {
-        await api.saveCurrControlType({ id, name });
-        await Promise.all([loadMeta(true), reloadKinds(), reloadCards()]);
-        if (isFormOpen()) renderControls();
-        setStatus("Сохранено.");
-      });
-    }
-    const del = e.target.closest("[data-del-ct]");
-    if (del) {
-      if (!confirm("Удалить вид контроля?")) return;
-      return guard(async () => {
-        await api.deleteCurrControlType(Number(del.dataset.delCt));
-        await Promise.all([loadMeta(true), reloadKinds(), reloadCards()]);
-        if (isFormOpen()) renderControls();
-        setStatus("Удалено.");
-      });
-    }
-  });
+  // ---- виды контроля: редактирование перенесено в «Справочники → Типы занятий»
+  // (обработчики ctAddBtn/ctTable удалены; control_type синхронизируется с
+  // lesson_type на сервере — см. syncControlsWithLessonTypes).
 
   // ---- дисциплины плана
   newDiscAddBtn()?.addEventListener("click", () =>

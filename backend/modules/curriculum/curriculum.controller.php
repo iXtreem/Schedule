@@ -109,14 +109,32 @@ function currUiLessonTypes(mysqli $mainConn): array {
   });
 }
 
+/* Виды контроля по семестрам = зеркало справочника «Типы занятий»
+ * (lesson_type). Перед отдачей списка синхронизируем control_type с
+ * справочником: названия всегда ПОЛНЫЕ (full name), привязка — через
+ * lesson_type_id. Редактирование доступно только в «Справочники → Типы
+ * занятий» (см. syncControlsWithLessonTypes в curriculum.repo.php). */
 function currUiControlTypes(): array {
   return currUiCache('controlTypes', static function () {
     $conn = planDB(getDBConnection());
+    try { syncControlsWithLessonTypes($conn, getDBConnection()); }
+    catch (Throwable $e) { error_log('syncControlsWithLessonTypes skipped: ' . $e->getMessage()); }
     return array_map(static fn($c) => [
-      'id'   => (int)$c['id'],
-      'name' => (string)$c['name'],
+      'id'           => (int)$c['id'],
+      'name'         => (string)$c['name'],                 // полное название
+      'lessonTypeId' => isset($c['lesson_type_id']) && $c['lesson_type_id'] !== null
+        ? (int)$c['lesson_type_id'] : null,
     ], repoCurrControlTypes($conn));
   });
+}
+
+/* Запись редактируется только через справочник типов занятий. */
+function currControlTypeReadOnly(): void {
+  errorJson(
+    'Виды контроля по семестрам совпадают со справочником «Типы занятий». '
+    . 'Измените тип занятия в окне «Справочники → Типы занятий» — план обновится автоматически.',
+    409
+  );
 }
 
 // Дисциплины: берём из справочника основной БД, подтягиваем id метаданной
@@ -428,37 +446,16 @@ function curriculumController($method, $entity) {
         currActivityKindReadOnly();
       }
 
-      // Справочник «Виды контроля» в окне «Справочники».
+      // Справочник «Виды контроля» — зеркало «Типов занятий»: чтение
+      // разрешено, редактирование заблокировано (409).
       case 'curr_control_types': {
         if ($method === 'GET') { sendJson(currUiControlTypes()); return; }
-        if ($method === 'POST' || $method === 'PUT') {
-          $body = getJsonBody() ?? [];
-          $id = (int)($body['id'] ?? 0);
-          sendJson(['success' => true, 'id' => repoCurrControlTypeSave($conn, $id ?: null, $body)]);
-          return;
-        }
-        if ($method === 'DELETE') {
-          repoCurrControlTypeDelete($conn, (int)getQuery('id', 0));
-          sendJson(['success' => true]);
-          return;
-        }
-        errorJson('Method not allowed', 405);
+        currControlTypeReadOnly();
       }
 
       case 'curriculum_control_type': {
         if ($method === 'GET') { sendJson(repoCurrControlTypes($conn)); return; }
-        if ($method === 'POST' || $method === 'PUT') {
-          $body = getJsonBody() ?? [];
-          $id = (int)($body['id'] ?? 0);
-          sendJson(['success' => true, 'id' => repoCurrControlTypeSave($conn, $id ?: null, $body)]);
-          return;
-        }
-        if ($method === 'DELETE') {
-          repoCurrControlTypeDelete($conn, (int)getQuery('id', 0));
-          sendJson(['success' => true]);
-          return;
-        }
-        errorJson('Method not allowed', 405);
+        currControlTypeReadOnly();
       }
 
       case 'curriculum_discipline': {

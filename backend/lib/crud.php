@@ -237,7 +237,10 @@ if (!function_exists('crudConfig')) {
       require_once $currRepo;
       if (!function_exists('syncKindsWithLessonTypes')) return;
       $planConn = planDB($conn);
-      syncKindsWithLessonTypes($planConn, $conn);
+      syncKindsWithLessonTypes($planConn, $conn);   // часы: activity_kind
+      if (function_exists('syncControlsWithLessonTypes')) {
+        syncControlsWithLessonTypes($planConn, $conn); // контроль: control_type
+      }
     } catch (Throwable $e) {
       error_log('crudAfterLessonTypeChange: ' . $e->getMessage());
     }
