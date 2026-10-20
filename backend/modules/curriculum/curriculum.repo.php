@@ -133,12 +133,15 @@ function repoCurrActivityKinds(mysqli $conn): array {
   // Условие NOT LIKE '%,%' — защита от «странного» вывода исторических
   // множественных связей ("3,7"): такие строки сначала расщепляются
   // функцией repoCurrExplodeMultiKindLinks() (вызывается синхронизацией).
+  // устаревшие строки вида «Лекции» без связи с типом занятий не показываем
   return dbAll($conn, "SELECT id, name, short_name, sort_order, lesson_type_id FROM {$t} ak
                       WHERE ak.is_deleted = 0
                         AND ak.lesson_type_id IS NOT NULL
                         AND ak.lesson_type_id NOT LIKE '%,%'
+                        AND CAST(ak.lesson_type_id AS CHAR) REGEXP '^[0-9]+$'
                         AND EXISTS (SELECT 1 FROM {$mp}lesson_type lt
-                                     WHERE lt.id = ak.lesson_type_id AND lt.is_deleted = 0)
+                                     WHERE lt.id = CAST(ak.lesson_type_id AS UNSIGNED)
+                                       AND lt.is_deleted = 0)
                       ORDER BY ak.sort_order, ak.name");
 }
 
@@ -226,6 +229,30 @@ function syncKindsWithLessonTypes(mysqli $planConn, mysqli $mainConn): void {
       dbExec($planConn,
         "UPDATE {$t} SET name = ?, short_name = ? WHERE lesson_type_id = ? AND is_deleted = 0",
         [$name, $short, $ltId]);
+      continue;
+    }
+
+    // 1b) в справочнике есть ещё один одноимённый тип занятия — создадим для
+    // него отдельное зеркало с суффиксом, иначе UNIQUE(name) не даст вставить
+    // дубль и тип пропадал из списка видов деятельности.
+    $sameNameOtherType = (int)dbScalar($planConn,
+      "SELECT COUNT(*) FROM {$t}
+        WHERE is_deleted = 0 AND name = ?
+          AND (lesson_type_id IS NULL OR lesson_type_id <> ?)",
+      [$name, $ltId], 0);
+    if ($sameNameOtherType > 0) {
+      $altName = $name . ' (' . $ltId . ')';
+      $revAlt = dbExec($planConn,
+        "UPDATE {$t} SET is_deleted = 0, name = ?, short_name = ?, lesson_type_id = ?
+          WHERE lesson_type_id = ? AND is_deleted = 1 LIMIT 1",
+        [$altName, $short, $ltId, $ltId]);
+      if ($revAlt === 0) {
+        try {
+          dbExec($planConn,
+            "INSERT INTO {$t} (name, short_name, lesson_type_id, sort_order) VALUES (?, ?, ?, 0)",
+            [$altName, $short, $ltId]);
+        } catch (Throwable $e) { /* гонка — следующий проход синхронизации починит */ }
+      }
       continue;
     }
 
@@ -694,12 +721,21 @@ function repoCurrReplaceHours(mysqli $conn, int $curriculumId, $hours): void {
   try { syncKindsWithLessonTypes($conn, getDBConnection()); }
   catch (Throwable $e) { error_log('syncKindsWithLessonTypes skipped: ' . $e->getMessage()); }
 
+  // Список разрешённых видов берём из того же зеркала, что и выпадающий
+  // список в карточке (repoCurrActivityKinds) — гарантия соответствия UI и БД.
   $allowedKinds = [];
-  foreach (dbAll($conn,
-      "SELECT id FROM {" . planTab('activity_kind') . "}
-       WHERE is_deleted = 0 AND lesson_type_id IS NOT NULL
-         AND lesson_type_id NOT LIKE '%,%'") as $r) {
+  foreach (repoCurrActivityKinds($conn) as $r) {
     $allowedKinds[(int)$r['id']] = true;
+  }
+
+  // Сохранённые ранее часы по этому плану: если тип занятия удалили из
+  // справочника, строки часов с «осиротевшим» видом сохраняем как есть
+  // (часы не теряются), а не выбрасываем их молча при пересохранении.
+  $prevKindIds = [];
+  foreach (dbAll($conn,
+      "SELECT DISTINCT activity_kind_id FROM {$ch} WHERE curriculum_id = ?",
+      [$curriculumId]) as $r) {
+    $prevKindIds[(int)$r['activity_kind_id']] = true;
   }
 
   dbExec($conn, "DELETE FROM {$ch} WHERE curriculum_id = ?", [$curriculumId]);
@@ -709,7 +745,10 @@ function repoCurrReplaceHours(mysqli $conn, int $curriculumId, $hours): void {
   foreach ($hours as $row) {
     $kindId = (int)($row['activity_kind_id'] ?? $row['activityKindId'] ?? 0);
     if ($kindId <= 0) continue;
-    if (!isset($allowedKinds[$kindId])) {
+    // Разрешены: актуальные виды из справочника ИЛИ виды, уже сохранённые в
+    // этой карточке ранее («осиротевшие» — тип занятия удалили, но часы
+    // пользователя не должны пропасть при пересохранении).
+    if (!isset($allowedKinds[$kindId]) && !isset($prevKindIds[$kindId])) {
       throw new Exception(
         'Вид учебной деятельности №' . $kindId . ' отсутствует в справочнике «Типы занятий». '
         . 'Добавьте тип занятия в «Справочники → Типы занятий» — вид деятельности '
@@ -758,12 +797,21 @@ function repoCurrReplaceControls(mysqli $conn, int $curriculumId, $controls): vo
   try { syncControlsWithLessonTypes($conn, getDBConnection()); }
   catch (Throwable $e) { error_log('syncControlsWithLessonTypes skipped: ' . $e->getMessage()); }
 
-  // Допустимые виды контроля: живые и привязанные к lesson_type.
+  // Допустимые виды контроля: ровно тот же список, что отдаётся в UI
+  // (repoCurrControlTypes) — живые control_type, привязанные к lesson_type.
   $allowed = [];
-  foreach (dbAll($conn,
-      "SELECT id FROM {" . planTab('control_type') . "}
-       WHERE is_deleted = 0 AND lesson_type_id IS NOT NULL") as $r) {
+  foreach (repoCurrControlTypes($conn) as $r) {
     $allowed[(int)$r['id']] = true;
+  }
+
+  // Ранее сохранённые по этой карточке виды контроля: если тип занятия
+  // удалили из справочника, отметки семестров сохраняем как есть (данные
+  // пользователя не должны пропасть при пересохранении карточки).
+  $prevCtIds = [];
+  foreach (dbAll($conn,
+      "SELECT DISTINCT control_type_id FROM {$cc} WHERE curriculum_id = ?",
+      [$curriculumId]) as $r) {
+    $prevCtIds[(int)$r['control_type_id']] = true;
   }
 
   dbExec($conn, "DELETE FROM {$cc} WHERE curriculum_id = ?", [$curriculumId]);
@@ -771,7 +819,7 @@ function repoCurrReplaceControls(mysqli $conn, int $curriculumId, $controls): vo
   foreach ($controls as $row) {
     $ctId = (int)($row['control_type_id'] ?? $row['controlTypeId'] ?? 0);
     if ($ctId <= 0) continue;
-    if (!isset($allowed[$ctId])) {
+    if (!isset($allowed[$ctId]) && !isset($prevCtIds[$ctId])) {
       throw new Exception(
         'Вид контроля №' . $ctId . ' отсутствует в справочнике «Типы занятий». '
         . 'Добавьте тип занятия в «Справочники → Типы занятий» — вид контроля '
