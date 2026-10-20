@@ -1786,3 +1786,30 @@ body.dict-modal-dragging {
 .curr-ctrl-term input {
   margin: 0;
 }
+
+/* Выпадающие списки строки «вид контроля по семестрам» (связь со
+ * справочником «Типы занятий»: только полные названия + выбор семестра 1..8) */
+.curr-ctrl-select {
+  min-width: 220px;
+}
+
+.curr-ctrl-term-select {
+  min-width: 130px;
+}
+
+.curr-ctrl-term-select:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+
+.curr-ctrl-terms {
+  display: inline-flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px;
+}
+
+.curr-ctrl-hint {
+  font-size: 12px;
+  margin-bottom: 2px;
+}

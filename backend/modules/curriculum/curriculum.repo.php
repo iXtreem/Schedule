@@ -57,9 +57,17 @@ function repoCurrDepartmentDelete(mysqli $conn, int $id): void {
 // -- Виды учебной деятельности --------------------------------------------------
 
 function repoCurrActivityKinds(mysqli $conn): array {
-  $t = planTab('activity_kind');
-  return dbAll($conn, "SELECT id, name, short_name, sort_order, lesson_type_id FROM {$t}
-                      WHERE is_deleted = 0 ORDER BY sort_order, name");
+  $t  = planTab('activity_kind');
+  $mp = currMainPrefix();
+  // Зеркало справочника «Типы занятий»: показываем только виды, реально
+  // привязанные к живому типу занятия (lesson_type_id). Старые фиксированные
+  // строки без связи не видны в программе до синхронизации.
+  return dbAll($conn, "SELECT id, name, short_name, sort_order, lesson_type_id FROM {$t} ak
+                      WHERE ak.is_deleted = 0
+                        AND ak.lesson_type_id IS NOT NULL
+                        AND EXISTS (SELECT 1 FROM {$mp}lesson_type lt
+                                     WHERE lt.id = ak.lesson_type_id AND lt.is_deleted = 0)
+                      ORDER BY ak.sort_order, ak.name");
 }
 
 /*
@@ -218,9 +226,17 @@ function syncKindsWithLessonTypes(mysqli $planConn, mysqli $mainConn): void {
  */
 
 function repoCurrControlTypes(mysqli $conn): array {
-  $t = planTab('control_type');
-  return dbAll($conn, "SELECT id, name, sort_order, lesson_type_id FROM {$t}
-                      WHERE is_deleted = 0 ORDER BY sort_order, name");
+  $t  = planTab('control_type');
+  $mp = currMainPrefix();
+  // Зеркало справочника «Типы занятий»: в списке только виды контроля,
+  // реально привязанные к живому типу занятия (lesson_type_id). Фиксированные
+  // дефолтные строки без связи не видны до синхронизации.
+  return dbAll($conn, "SELECT ct.id, ct.name, ct.sort_order, ct.lesson_type_id FROM {$t} ct
+                      WHERE ct.is_deleted = 0
+                        AND ct.lesson_type_id IS NOT NULL
+                        AND EXISTS (SELECT 1 FROM {$mp}lesson_type lt
+                                     WHERE lt.id = ct.lesson_type_id AND lt.is_deleted = 0)
+                      ORDER BY ct.sort_order, ct.name");
 }
 
 function repoCurrControlTypeSave(mysqli $conn, ?int $id, $body): int {

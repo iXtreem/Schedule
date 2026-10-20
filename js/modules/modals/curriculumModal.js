@@ -443,7 +443,7 @@ function ctrlRowHtml(row, idx) {
     .join("");
 
   return (
-    `<div class="curr-ctrl-row" data-ctrl-row="${idx}">` +
+    `<div class="curr-ctrl-row" data-ctrl-row="${idx}" data-prev-ct-id="${row.ctId ?? ""}">` +
     `<select class="select curr-ctrl-select" data-ctrl-select="${idx}">` +
     `${options}</select>` +
     `<select class="select curr-ctrl-term-select" data-ctrl-term-add="${idx}"` +
